@@ -12,8 +12,7 @@ def find_config_file():
         if config_path.exists():
             return config_path
 
-    home_dir = os.getenv('HOME', '/')
-    home_config_path = Path(home_dir) / '.config' / 'nscb.conf'
+    home_config_path = Path(os.getenv('HOME', '/')) / '.config' / 'nscb.conf'
     if home_config_path.exists():
         return home_config_path
 
@@ -22,8 +21,8 @@ def find_config_file():
 def find_gamescope():
     """Check if gamescope is in the system PATH."""
     path_dirs = os.environ['PATH'].split(':')
-    for directory in path_dirs:
-        gamescope_path = Path(directory) / 'gamescope'
+    for path_dir in path_dirs:
+        gamescope_path = Path(path_dir) / 'gamescope'
         if gamescope_path.exists() and gamescope_path.is_file() and os.access(gamescope_path, os.X_OK):
             return True
     return False
@@ -76,4 +75,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
