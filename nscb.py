@@ -1,10 +1,13 @@
 #!/usr/bin/python3
+
 import os
 import sys
 import argparse
 from pathlib import Path
+from typing import Optional, Dict, List
 
-def find_config_file():
+def find_config_file() -> Optional[Path]:
+    """Find and return the path to nscb.conf configuration file."""
     # Try XDG_CONFIG_HOME first, then fallback to $HOME/.config
     xdg_config_home = os.getenv('XDG_CONFIG_HOME')
     if xdg_config_home:
@@ -18,16 +21,17 @@ def find_config_file():
 
     return None
 
-def find_gamescope():
-    """Check if gamescope is in the system PATH."""
+def find_executable(name: str) -> bool:
+    """Check if an executable is in the system PATH."""
     path_dirs = os.environ['PATH'].split(':')
     for path_dir in path_dirs:
-        gamescope_path = Path(path_dir) / 'gamescope'
-        if gamescope_path.exists() and gamescope_path.is_file() and os.access(gamescope_path, os.X_OK):
+        executable_path = Path(path_dir) / name
+        if executable_path.exists() and executable_path.is_file() and os.access(executable_path, os.X_OK):
             return True
     return False
 
-def load_config(config_file):
+def load_config(config_file: Path) -> Dict[str, str]:
+    """Load configuration from file and return as dictionary."""
     config = {}
     with open(config_file, 'r') as f:
         for line in f:
@@ -37,8 +41,8 @@ def load_config(config_file):
                 config[key.strip()] = value.strip()
     return config
 
-def main():
-    if not find_gamescope():
+def main() -> None:
+    if not find_executable('gamescope'):
         print("Error: gamescope not found in PATH or is not executable", file=sys.stderr)
         sys.exit(1)
 
@@ -56,7 +60,7 @@ def main():
 
     config = load_config(config_file)
 
-    profile_args = []
+    profile_args: List[str] = []
     if args.profile:
         if args.profile in config:
             profile_args = config[args.profile].split()
