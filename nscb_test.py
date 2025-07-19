@@ -70,6 +70,23 @@ profile2 = value2
         expected = {'profile1': 'value1', 'profile2': 'value2'}
         self.assertEqual(load_config(config_path), expected)
 
+    def test_load_config_quoted_values(self):
+        """Test loading configuration with quoted values"""
+        config_path = Path(test_root / 'nscb.conf')
+        config_path.write_text('''# Test quoted and unquoted values
+quoted_double = "-W 640 -H 480 --force-grab-cursor"
+quoted_single = '-W 1920 -H 1080 --fullscreen'
+unquoted = -W 800 -H 600 --windowed
+mixed_spaces = "  -W 1024 -H 768  "
+''')
+        expected = {
+            'quoted_double': '-W 640 -H 480 --force-grab-cursor',
+            'quoted_single': '-W 1920 -H 1080 --fullscreen', 
+            'unquoted': '-W 800 -H 600 --windowed',
+            'mixed_spaces': '  -W 1024 -H 768  '
+        }
+        self.assertEqual(load_config(config_path), expected)
+
     def test_main_gamescope_not_found(self):
         """Test error handling when gamescope is not found"""
         with patch.dict('os.environ', {'PATH': str(test_root / 'bin')}, clear=False):
@@ -80,8 +97,8 @@ profile2 = value2
                         main()
                 self.assertEqual(context.exception.code, 1)
 
-    def test_main_no_config_file(self):
-        """Test error handling when config file is not found"""
+    def test_main_no_config_file_with_profile(self):
+        """Test error handling when config file is not found but profile is specified"""
         Path(test_root / 'bin').mkdir(parents=True, exist_ok=True)
         gamescope_path = Path(test_root / 'bin' / 'gamescope')
         gamescope_path.touch()
@@ -89,9 +106,22 @@ profile2 = value2
         with patch.dict('os.environ', {'PATH': str(test_root / 'bin'), 'XDG_CONFIG_HOME': '/nonexistent', 'HOME': str(test_root / 'home')}, clear=False):
             with patch('sys.stderr', StringIO()):  # Suppress error output
                 with self.assertRaises(SystemExit) as context:
-                    with patch.object(sys, 'argv', ['nscb.py']):
+                    with patch.object(sys, 'argv', ['nscb.py', '-p', 'some_profile']):
                         main()
                 self.assertEqual(context.exception.code, 1)
+
+    def test_main_no_config_file_without_profile(self):
+        """Test that program works when config file is not found but no profile is specified"""
+        Path(test_root / 'bin').mkdir(parents=True, exist_ok=True)
+        gamescope_path = Path(test_root / 'bin' / 'gamescope')
+        gamescope_path.touch()
+        os.chmod(gamescope_path, 0o755)
+        with patch.dict('os.environ', {'PATH': str(test_root / 'bin'), 'XDG_CONFIG_HOME': '/nonexistent', 'HOME': str(test_root / 'home')}, clear=False):
+            with patch('sys.stdout', StringIO()):  # Suppress print output
+                with patch.object(sys, 'argv', ['nscb.py', '-f', '--fullscreen']):
+                    with patch.object(os, 'execvp') as mock_execvp:
+                        main()
+                        mock_execvp.assert_called_with('gamescope', ['-f', '--fullscreen'])
 
     def test_main_with_profile(self):
         """Test handling profile and command-line arguments"""
@@ -119,7 +149,65 @@ profile2 = value2
                 with patch.object(sys, 'argv', ['nscb.py', '-p', 'test_profile', '--', '--fullscreen']):
                     with patch.object(os, 'execvp') as mock_execvp:
                         main()
-                        mock_execvp.assert_called_with('gamescope', ['gamescope', '-f', '-o', '--value1', '--', '--fullscreen'])
+                        mock_execvp.assert_called_with('gamescope', ['-f', '-o', '--value1', '--', '--fullscreen'])
+
+    def test_main_with_quoted_profile_args(self):
+        """Test handling profile with quoted arguments in config"""
+        # Create config file with quoted profile arguments
+        xdg_config_dir = test_root / 'xdg'
+        xdg_config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = xdg_config_dir / 'nscb.conf'
+        config_path.write_text('vkcube = "-W 640 -H 480 --force-grab-cursor"\n')
+        
+        # Create gamescope executable
+        bin_dir = test_root / 'bin'
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        gamescope_path = bin_dir / 'gamescope'
+        gamescope_path.touch()
+        os.chmod(gamescope_path, 0o755)
+
+        # Set up environment and test
+        env_vars = {
+            'PATH': str(bin_dir),
+            'XDG_CONFIG_HOME': str(xdg_config_dir)
+        }
+
+        with patch.dict('os.environ', env_vars, clear=False):
+            with patch('sys.stdout', StringIO()):  # Suppress print output
+                with patch.object(sys, 'argv', ['nscb.py', '-p', 'vkcube', '--', 'vkcube']):
+                    with patch.object(os, 'execvp') as mock_execvp:
+                        main()
+                        # Should split the quoted arguments properly
+                        mock_execvp.assert_called_with('gamescope', ['-W', '640', '-H', '480', '--force-grab-cursor', '--', 'vkcube'])
+
+    def test_main_with_unquoted_profile_args(self):
+        """Test handling profile with unquoted arguments in config"""
+        # Create config file with unquoted profile arguments  
+        xdg_config_dir = test_root / 'xdg'
+        xdg_config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = xdg_config_dir / 'nscb.conf'
+        config_path.write_text('gaming = -W 1920 -H 1080 --fullscreen\n')
+        
+        # Create gamescope executable
+        bin_dir = test_root / 'bin'
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        gamescope_path = bin_dir / 'gamescope'
+        gamescope_path.touch()
+        os.chmod(gamescope_path, 0o755)
+
+        # Set up environment and test
+        env_vars = {
+            'PATH': str(bin_dir),
+            'XDG_CONFIG_HOME': str(xdg_config_dir)
+        }
+
+        with patch.dict('os.environ', env_vars, clear=False):
+            with patch('sys.stdout', StringIO()):  # Suppress print output
+                with patch.object(sys, 'argv', ['nscb.py', '-p', 'gaming', 'steam']):
+                    with patch.object(os, 'execvp') as mock_execvp:
+                        main()
+                        # Should split the unquoted arguments properly
+                        mock_execvp.assert_called_with('gamescope', ['-W', '1920', '-H', '1080', '--fullscreen', 'steam'])
 
     def test_main_unknown_profile(self):
         """Test handling unknown profile"""

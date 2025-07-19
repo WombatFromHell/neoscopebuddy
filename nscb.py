@@ -2,9 +2,8 @@
 
 import os
 import sys
-import argparse
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 
 def find_config_file() -> Optional[Path]:
     """Find and return the path to nscb.conf configuration file."""
@@ -37,44 +36,81 @@ def load_config(config_file: Path) -> Dict[str, str]:
             line = line.strip()
             if line and not line.startswith('#'):
                 key, value = line.split('=', 1)
-                config[key.strip()] = value.strip()
+                key = key.strip()
+                value = value.strip()
+                # Remove surrounding quotes if present
+                if len(value) >= 2 and ((value.startswith('"') and value.endswith('"')) or 
+                                       (value.startswith("'") and value.endswith("'"))):
+                    value = value[1:-1]
+
+                config[key] = value
     return config
+
+def parse_profile_args(args: List[str]) -> Tuple[Optional[str], List[str]]:
+    """Parse command line arguments to extract profile and remaining args.
+    Returns:
+        Tuple of (profile_name, remaining_args)
+    """
+    profile = None
+    remaining_args = []
+    i = 0
+
+    while i < len(args):
+        arg = args[i]
+        if arg == '-p' or arg == '--profile':
+            # Next argument should be the profile name
+            if i + 1 < len(args):
+                profile = args[i + 1]
+                i += 2  # Skip both the flag and its value
+            else:
+                print(f"Error: {arg} requires a value", file=sys.stderr)
+                sys.exit(1)
+        elif arg.startswith('--profile='):
+            # Handle --profile=value format
+            profile = arg.split('=', 1)[1]
+            i += 1
+        else:
+            # This argument is not related to profile, pass it through
+            remaining_args.append(arg)
+            i += 1
+
+    return profile, remaining_args
 
 def main() -> None:
     if not find_executable('gamescope'):
         print("Error: gamescope not found in PATH or is not executable", file=sys.stderr)
         sys.exit(1)
 
-    parser = argparse.ArgumentParser(prog='nscb.py')
-    parser.add_argument('-p', '--profile', help='Profile name to use')
-    parser.add_argument('gamescope_args', nargs=argparse.REMAINDER, help='Arguments to pass to gamescope')
-
-    args = parser.parse_args()
-
-    config_file = find_config_file()
-    if not config_file:
-        print("Error: Could not find nscb.conf in $XDG_CONFIG_HOME/nscb.conf or $HOME/.config/nscb.conf", file=sys.stderr)
-        sys.exit(1)
-
-    config = load_config(config_file)
+    # Skip the script name (sys.argv[0])
+    command_args = sys.argv[1:]
+    # Parse profile arguments manually
+    profile, gamescope_args = parse_profile_args(command_args)
 
     profile_args = []
-    if args.profile:
-        if args.profile in config:
-            profile_args = config[args.profile].split()
+    if profile:
+        # Only require config file if a profile is specified
+        config_file = find_config_file()
+        if not config_file:
+            print("Error: Could not find nscb.conf in $XDG_CONFIG_HOME/nscb.conf or $HOME/.config/nscb.conf", file=sys.stderr)
+            sys.exit(1)
+
+        config = load_config(config_file)
+
+        if profile in config:
+            profile_args = config[profile].split()
         else:
             # Treat as literal gamescope args if it contains spaces
-            if ' ' in args.profile:
-                profile_args = args.profile.split()
+            if ' ' in profile:
+                profile_args = profile.split()
             else:
-                print(f"Error: Profile '{args.profile}' not found", file=sys.stderr)
+                print(f"Error: Profile '{profile}' not found", file=sys.stderr)
                 sys.exit(1)
 
     # Combine profile args and the remaining args from the command line
-    gamescope_cmd = ['gamescope'] + profile_args + args.gamescope_args
+    gamescope_cmd = ['gamescope'] + profile_args + gamescope_args
 
     print('Executing:', ' '.join(gamescope_cmd))
-    os.execvp('gamescope', gamescope_cmd)
+    os.execvp('gamescope', gamescope_cmd[1:])
 
 if __name__ == '__main__':
     main()
