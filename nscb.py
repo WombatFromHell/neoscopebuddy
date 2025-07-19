@@ -4,11 +4,10 @@ import os
 import sys
 import argparse
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 
 def find_config_file() -> Optional[Path]:
     """Find and return the path to nscb.conf configuration file."""
-    # Try XDG_CONFIG_HOME first, then fallback to $HOME/.config
     xdg_config_home = os.getenv('XDG_CONFIG_HOME')
     if xdg_config_home:
         config_path = Path(xdg_config_home) / 'nscb.conf'
@@ -48,8 +47,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(prog='nscb.py')
     parser.add_argument('-p', '--profile', help='Profile name to use')
-    parser.add_argument('app', nargs='?', help='Application to run')
-    parser.add_argument('app_args', nargs='*', help='Arguments for the application')
+    parser.add_argument('gamescope_args', nargs=argparse.REMAINDER, help='Arguments to pass to gamescope')
 
     args = parser.parse_args()
 
@@ -60,22 +58,23 @@ def main() -> None:
 
     config = load_config(config_file)
 
-    profile_args: List[str] = []
+    profile_args = []
     if args.profile:
         if args.profile in config:
             profile_args = config[args.profile].split()
         else:
-            print(f"Error: Profile '{args.profile}' not found in {config_file}", file=sys.stderr)
-            sys.exit(1)
+            # Treat as literal gamescope args if it contains spaces
+            if ' ' in args.profile:
+                profile_args = args.profile.split()
+            else:
+                print(f"Error: Profile '{args.profile}' not found", file=sys.stderr)
+                sys.exit(1)
 
-    # Build the gamescope command
-    gamescope_cmd = ['gamescope'] + profile_args
-    if args.app:
-        gamescope_cmd.extend(['--', args.app])
-        gamescope_cmd.extend(args.app_args)
+    # Combine profile args and the remaining args from the command line
+    gamescope_cmd = ['gamescope'] + profile_args + args.gamescope_args
 
     print('Executing:', ' '.join(gamescope_cmd))
-    os.execvp('gamescope', gamescope_cmd)  # This will replace the current process with gamescope
+    os.execvp('gamescope', gamescope_cmd)
 
 if __name__ == '__main__':
     main()
