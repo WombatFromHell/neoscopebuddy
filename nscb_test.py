@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import os
 import shutil
 from pathlib import Path
@@ -13,6 +13,7 @@ from nscb import (
     load_config,
     merge_arguments,
     parse_arguments,
+    is_gamescope_active,
     main,
 )
 
@@ -456,6 +457,62 @@ complex = "-W 2560 -H 1440 steam -- --args"
                 "args",
             ],
         )
+
+    def test_is_gamescope_active(self):
+        """Test is_gamescope_active with various scenarios."""
+
+        # Case 1: XDG_CURRENT_DESKTOP == "gamescope" => return True
+        with patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "gamescope"}):
+            self.assertTrue(is_gamescope_active())
+
+        # Case 2: Process matches "steam.sh -.+ -steampal"
+        with patch("subprocess.run") as mock_run:
+            mock_result = MagicMock()
+            mock_result.stdout = "1234 pts/0  S+  0:00 steam.sh some-args -steampal"
+            mock_run.return_value = mock_result
+            self.assertTrue(is_gamescope_active())
+
+        # Case 3: No matching process, no XDG_CURRENT_DESKTOP == gamescope => return False
+        with patch("subprocess.run") as mock_run:
+            mock_result = MagicMock()
+            mock_result.stdout = "1234 pts/0  S+  0:00 steam.sh -no-args"
+            mock_run.return_value = mock_result
+
+            self.assertFalse(is_gamescope_active())
+
+
+def test_main_output_when_gamescope_active(self):
+    """Test that when Gamescope is active, full_command excludes 'gamescope' and includes application part."""
+
+    bin_dir = self.test_root / "bin"
+    bin_dir.mkdir()
+    gamescope_path = bin_dir / "gamescope"
+    gamescope_path.touch()
+    os.chmod(gamescope_path, 0o755)
+
+    # Mock environment variables
+    base_env = {
+        "PATH": str(bin_dir),
+        "NSCB_PRECMD": "echo 'pre-command'",
+        "NSCB_POSTCMD": "echo 'post-command'",
+    }
+
+    with patch.dict("os.environ", base_env):
+        with patch("nscb.is_gamescope_active", return_value=True):
+            # Simulate command-line arguments including a -- and an app to run
+            with patch.object(sys, "argv", ["nscb.py", "--", "steam.sh"]):
+
+                captured_output = StringIO()
+                with patch("sys.stdout", captured_output):
+                    main()
+
+                output = captured_output.getvalue()
+                self.assertIn("Executing:", output)
+                self.assertNotIn("gamescope", output)  # Verify Gamescope not present
+                self.assertIn(
+                    "echo 'pre-command'; steam.sh; echo 'post-command'", output
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

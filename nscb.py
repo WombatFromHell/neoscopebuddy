@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 
+import re
 import os
 import sys
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import shlex
@@ -192,6 +194,35 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
     return result
 
 
+def is_gamescope_active() -> bool:
+    """Determine whether the system is already running under an existing gamescope compositor."""
+
+    # Check XDG_CURRENT_DESKTOP == "gamescope"
+    if os.environ.get("XDG_CURRENT_DESKTOP", "") == "gamescope":
+        return True
+
+    # Check for a process that matches the pattern:
+    # steam.sh -.+ -steampal
+    try:
+        result = subprocess.run(
+            ["ps", "ax"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,  # Ignore errors from ps
+            text=True,
+            check=False,
+        )
+        output = result.stdout
+
+        if re.search(r"steam\.sh .+ -steampal", output):
+            return True
+
+    except Exception:
+        # Ignore errors, assume no such process is running
+        pass
+
+    return False
+
+
 def main() -> None:
     if not find_executable("gamescope"):
         print(
@@ -207,7 +238,6 @@ def main() -> None:
 
     profile_args: List[str] = []
     if profile:
-        # Only require config file if a profile is specified
         config_file = find_config_file()
         if not config_file:
             print(
@@ -236,10 +266,21 @@ def main() -> None:
     quoted_pre_cmd = shlex.quote(pre_cmd) if pre_cmd else ""
     quoted_post_cmd = shlex.quote(post_cmd) if post_cmd else ""
 
-    gamescope_cmd = ["gamescope"] + final_args
-    gamescope_str = " ".join(shlex.quote(arg) for arg in gamescope_cmd)
+    if not is_gamescope_active():
+        gamescope_cmd = ["gamescope"] + final_args
+        gamescope_str = " ".join(shlex.quote(arg) for arg in gamescope_cmd)
+        full_command = f"{quoted_pre_cmd}; env {gamescope_str}; {quoted_post_cmd}"
+    else:
+        # Extract the application to run (after '--')
+        app_to_run = []
+        for arg in final_args:
+            if arg == "--":
+                break
+            app_to_run.append(arg)
 
-    full_command = f"{quoted_pre_cmd}; env {gamescope_str}; {quoted_post_cmd}"
+        # Construct the command that runs the application directly, with pre/post commands
+        app_part = " ".join(app_to_run) if app_to_run else ""
+        full_command = f"{quoted_pre_cmd}; {app_part}; {quoted_post_cmd}"
 
     print("Executing:", full_command)
     os.system(full_command)
