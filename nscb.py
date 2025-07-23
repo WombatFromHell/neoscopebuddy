@@ -201,6 +201,7 @@ def main() -> None:
 
     # Skip the script name (sys.argv[0])
     command_args = sys.argv[1:]
+
     # Parse profile arguments manually
     profile, gamescope_args = parse_arguments(command_args)
 
@@ -226,11 +227,22 @@ def main() -> None:
 
     # Merge profile args with command line args (command line takes precedence)
     final_args = merge_arguments(profile_args, gamescope_args)
-    # Build the final command
-    gamescope_cmd = ["gamescope"] + final_args
 
-    print("Executing:", " ".join(shlex.quote(arg) for arg in gamescope_cmd))
-    os.execvp("gamescope", gamescope_cmd[1:])
+    # Get pre and post commands from environment variables
+    pre_cmd = os.environ.get("NSCB_PRECMD", "")
+    post_cmd = os.environ.get("NSCB_POSTCMD", "")
+
+    # Quote the commands to safely pass them into shell
+    quoted_pre_cmd = shlex.quote(pre_cmd) if pre_cmd else ""
+    quoted_post_cmd = shlex.quote(post_cmd) if post_cmd else ""
+
+    gamescope_cmd = ["gamescope"] + final_args
+    gamescope_str = " ".join(shlex.quote(arg) for arg in gamescope_cmd)
+
+    full_command = f"{quoted_pre_cmd}; env {gamescope_str}; {quoted_post_cmd}"
+
+    print("Executing:", full_command)
+    os.system(full_command)
 
 
 if __name__ == "__main__":
