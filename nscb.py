@@ -17,9 +17,12 @@ def find_config_file() -> Optional[Path]:
         if config_path.exists():
             return config_path
 
-    home_config_path = Path(os.getenv("HOME", "/")) / ".config" / "nscb.conf"
-    if home_config_path.exists():
-        return home_config_path
+    # Fix: Use HOME environment variable correctly for the .config path
+    home = os.getenv("HOME")
+    if home:
+        home_config_path = Path(home) / ".config" / "nscb.conf"
+        if home_config_path.exists():
+            return home_config_path
 
     return None
 
@@ -223,6 +226,138 @@ def is_gamescope_active() -> bool:
     return False
 
 
+def parse_env_and_command(cmd_line: str) -> Tuple[Dict[str, str], List[str]]:
+    """Parse environment variables and command from a command line string."""
+    # Use shlex to properly handle quotes
+    tokens = shlex.split(cmd_line)
+
+    # Extract environment variables (key=value at the start)
+    env_vars = {}
+    app_index = 0
+
+    for i, token in enumerate(tokens):
+        if "=" in token and not token.startswith(("-", "/")):
+            key, value = token.split("=", 1)
+            env_vars[key] = value
+            app_index = i + 1
+        else:
+            app_index = i
+            break
+
+    # Extract the command part
+    command_parts = tokens[app_index:]
+    return env_vars, command_parts
+
+
+def extract_nscb_args(
+    command_parts: List[str],
+) -> Tuple[Optional[str], List[str], List[str]]:
+    """Extract profile, nscb args, and gamescope+app args from command parts.
+    Returns:
+        Tuple of (profile_name, nscb_args, gamescope_app_args)
+    """
+    # Find nscb.py and process arguments
+    try:
+        nscb_index = command_parts.index("nscb.py")
+        # Get everything after nscb.py
+        remaining_parts = command_parts[nscb_index + 1 :]
+    except ValueError:
+        # nscb.py not found, treat everything as gamescope+app args
+        return None, [], command_parts
+
+    # Parse nscb.py arguments and separate gamescope arguments
+    profile = None
+    nscb_args = []
+    gamescope_app_args = []
+    i = 0
+
+    # Process nscb.py reserved arguments
+    while i < len(remaining_parts):
+        token = remaining_parts[i]
+
+        # Check for reserved nscb.py arguments
+        if token in ["-p", "--profile"]:
+            # Next argument should be the profile name or value
+            if i + 1 < len(remaining_parts):
+                profile = remaining_parts[i + 1]
+                i += 2  # Skip both the flag and its value
+            else:
+                print(f"Error: {token} requires a value", file=sys.stderr)
+                sys.exit(1)
+        elif token.startswith("--profile="):
+            # Handle --profile=value format
+            profile = token.split("=", 1)[1]
+            i += 1
+        elif token == "--":
+            # Found the separator, everything after this goes to gamescope+app
+            gamescope_app_args = remaining_parts[i:]
+            break
+        else:
+            # This is a gamescope argument that should be passed through
+            nscb_args.append(token)
+            i += 1
+
+    return profile, nscb_args, gamescope_app_args
+
+
+def build_interpolated_string(cmd_line: str) -> str:
+    """Build the interpolated command string from a full command line."""
+    # Parse environment variables and command
+    env_vars, command_parts = parse_env_and_command(cmd_line)
+
+    # Extract profile and separate arguments
+    _, nscb_args, gamescope_app_args = extract_nscb_args(command_parts)
+
+    # Extract specific environment variables
+    ldpreload_str = env_vars.get("LD_PRELOAD", "")
+    if ldpreload_str:
+        ldpreload_str = f"LD_PRELOAD={ldpreload_str}"
+
+    pre_cmd = env_vars.get("NSCB_PRE_CMD", env_vars.get("NSCB_PRECMD", ""))
+    post_cmd = env_vars.get("NSCB_POST_CMD", env_vars.get("NSCB_POSTCMD", ""))
+
+    # Build the gamescope command
+    # Fix: Preserve the -- separator when building the command
+    if gamescope_app_args:
+        try:
+            separator_index = gamescope_app_args.index("--")
+            gamescope_args = gamescope_app_args[:separator_index]
+            app_command = gamescope_app_args[separator_index + 1 :]
+
+            # Combine nscb_args and gamescope_args
+            combined_gamescope_args = nscb_args + gamescope_args
+
+            if ldpreload_str:
+                gamescope_cmd = ["gamescope", "-f"] + combined_gamescope_args
+                app_cmd = ["env", ldpreload_str] + app_command
+                result = f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)} -- {" ".join(app_cmd)}; {post_cmd}'
+            else:
+                gamescope_cmd = ["gamescope", "-f"] + combined_gamescope_args
+                if app_command:
+                    result = f'{pre_cmd}; {" ".join(gamescope_cmd)} -- {" ".join(app_command)}; {post_cmd}'
+                else:
+                    result = f'{pre_cmd}; {" ".join(gamescope_cmd)}; {post_cmd}'
+        except ValueError:
+            # No -- separator, treat everything as gamescope args
+            combined_gamescope_args = nscb_args + gamescope_app_args
+            gamescope_cmd = ["gamescope", "-f"] + combined_gamescope_args
+            if ldpreload_str:
+                result = f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)}; {post_cmd}'
+            else:
+                result = f'{pre_cmd}; {" ".join(gamescope_cmd)}; {post_cmd}'
+    else:
+        # No gamescope_app_args, just use nscb_args
+        gamescope_cmd = ["gamescope", "-f"] + nscb_args
+        if ldpreload_str:
+            result = (
+                f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)}; {post_cmd}'
+            )
+        else:
+            result = f'{pre_cmd}; {" ".join(gamescope_cmd)}; {post_cmd}'
+
+    return result.strip("; ")
+
+
 def main() -> None:
     if not find_executable("gamescope"):
         print(
@@ -259,31 +394,46 @@ def main() -> None:
     final_args = merge_arguments(profile_args, gamescope_args)
 
     # Get pre and post commands from environment variables
-    pre_cmd = os.environ.get("NSCB_PRECMD", "")
-    post_cmd = os.environ.get("NSCB_POSTCMD", "")
+    pre_cmd = os.environ.get("NSCB_PRE_CMD", os.environ.get("NSCB_PRECMD", ""))
+    post_cmd = os.environ.get("NSCB_POST_CMD", os.environ.get("NSCB_POSTCMD", ""))
 
-    # Quote the commands to safely pass them into shell
-    quoted_pre_cmd = shlex.quote(pre_cmd) if pre_cmd else ""
-    quoted_post_cmd = shlex.quote(post_cmd) if post_cmd else ""
-
+    # Build the final command parts properly
     if not is_gamescope_active():
         gamescope_cmd = ["gamescope"] + final_args
         gamescope_str = " ".join(shlex.quote(arg) for arg in gamescope_cmd)
-        full_command = f"{quoted_pre_cmd}; env {gamescope_str}; {quoted_post_cmd}"
+
+        # Build full command with pre/post commands
+        command_parts = []
+        if pre_cmd.strip():
+            command_parts.append(pre_cmd.strip())
+        command_parts.append(gamescope_str)
+        if post_cmd.strip():
+            command_parts.append(post_cmd.strip())
+
+        full_command = "; ".join(command_parts)
     else:
         # Extract the application to run (after '--')
-        app_to_run = []
-        for arg in final_args:
-            if arg == "--":
-                break
-            app_to_run.append(arg)
+        try:
+            dash_index = final_args.index("--")
+            app_args = final_args[dash_index + 1 :]
+        except ValueError:
+            app_args = []
 
         # Construct the command that runs the application directly, with pre/post commands
-        app_part = " ".join(app_to_run) if app_to_run else ""
-        full_command = f"{quoted_pre_cmd}; {app_part}; {quoted_post_cmd}"
+        command_parts = []
+        if pre_cmd.strip():
+            command_parts.append(pre_cmd.strip())
+        if app_args:
+            app_str = " ".join(shlex.quote(arg) for arg in app_args)
+            command_parts.append(app_str)
+        if post_cmd.strip():
+            command_parts.append(post_cmd.strip())
+
+        full_command = "; ".join(command_parts) if command_parts else ""
 
     print("Executing:", full_command)
-    os.system(full_command)
+    if full_command:
+        os.system(full_command)
 
 
 if __name__ == "__main__":
