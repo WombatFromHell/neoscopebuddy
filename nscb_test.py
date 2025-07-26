@@ -112,6 +112,15 @@ class TestNSCB(unittest.TestCase):
 
         self.assertEqual(command_parts, ["gamescope", "-f"])
 
+    def test_parse_env_and_command_with_ld_preload_only(self):
+        """Test parsing command line with only LD_PRELOAD environment variable."""
+        cmd_line = 'LD_PRELOAD="/usr/lib/mangohud/libMangoHud.so" nscb.py -f -- steam'
+
+        env_vars, command_parts = parse_env_and_command(cmd_line)
+
+        self.assertEqual(env_vars, {"LD_PRELOAD": "/usr/lib/mangohud/libMangoHud.so"})
+        self.assertEqual(command_parts, ["nscb.py", "-f", "--", "steam"])
+
     def test_extract_nscb_args_gamescope_style(self):
         # Case 1: nscb.py found in args with gamescope-like arguments
         args = [
@@ -156,6 +165,99 @@ class TestNSCB(unittest.TestCase):
         self.assertIn("--force-grab-cursor", result)
         self.assertIn("-- /usr/bin/someapp", result)
 
+    def test_build_interpolated_string_with_ld_preload(self):
+        """Test that LD_PRELOAD is correctly moved to the app command and removed from gamescope env."""
+        cmd_line = 'LD_PRELOAD="/usr/lib/mangohud/libMangoHud.so" nscb.py -f -W 1920 -H 1080 -- steam'
+
+        result = build_interpolated_string(cmd_line)
+
+        # Check that LD_PRELOAD is unset for gamescope command
+        self.assertIn("env -u LD_PRELOAD gamescope -f", result)
+
+        # Check that LD_PRELOAD is set for the app command
+        self.assertIn(
+            "-- env LD_PRELOAD=/usr/lib/mangohud/libMangoHud.so steam", result
+        )
+
+        # Check that gamescope args are preserved
+        self.assertIn("-W 1920", result)
+        self.assertIn("-H 1080", result)
+
+    def test_build_interpolated_string_with_ld_preload_and_pre_post_cmd(self):
+        """Test LD_PRELOAD handling with pre and post commands."""
+        cmd_line = 'LD_PRELOAD="/lib/test.so" NSCB_PRECMD="echo starting" NSCB_POSTCMD="echo done" nscb.py -f -- vkcube'
+
+        result = build_interpolated_string(cmd_line)
+
+        # Should have three parts separated by semicolons
+        parts = result.split("; ")
+        self.assertEqual(len(parts), 3)
+
+        # Pre command
+        self.assertEqual(parts[0], "echo starting")
+
+        # Main command with LD_PRELOAD handling
+        main_cmd = parts[1]
+        self.assertIn("env -u LD_PRELOAD gamescope -f", main_cmd)
+        self.assertIn("-- env LD_PRELOAD=/lib/test.so vkcube", main_cmd)
+
+        # Post command
+        self.assertEqual(parts[2], "echo done")
+
+    def test_build_interpolated_string_with_ld_preload_no_app(self):
+        """Test LD_PRELOAD handling when no app is specified (only gamescope args)."""
+        cmd_line = 'LD_PRELOAD="/lib/test.so" nscb.py -f -W 1920'
+
+        result = build_interpolated_string(cmd_line)
+
+        # Should unset LD_PRELOAD for gamescope when no app is specified
+        self.assertIn("env -u LD_PRELOAD gamescope -f -W 1920", result)
+        # Should not contain the app env command since no app specified
+        self.assertNotIn("-- env LD_PRELOAD", result)
+
+    def test_build_interpolated_string_without_ld_preload(self):
+        """Test normal command building without LD_PRELOAD."""
+        cmd_line = 'NSCB_PRECMD="echo pre" nscb.py -f -- steam'
+
+        result = build_interpolated_string(cmd_line)
+
+        # Should not contain LD_PRELOAD handling
+        self.assertNotIn("env -u LD_PRELOAD", result)
+        self.assertNotIn("env LD_PRELOAD", result)
+
+        # Should contain normal command structure
+        parts = result.split("; ")
+        self.assertEqual(len(parts), 2)  # pre command + main command
+        self.assertEqual(parts[0], "echo pre")
+        self.assertIn("gamescope -f -- steam", parts[1])
+
+    def test_build_interpolated_string_complex_ld_preload_scenario(self):
+        """Test complex scenario with LD_PRELOAD, multiple gamescope args, and complex app command."""
+        cmd_line = 'LD_PRELOAD="/usr/lib/mangohud/libMangoHud.so:/usr/lib/gamemode/libgamemodeauto.so" NSCB_PRECMD="nvidia-settings -a GPUPowerMizerMode=1" nscb.py -f -W 2560 -H 1440 --force-grab-cursor -- env STEAM_COMPAT_DATA_PATH=/home/user/.steam steam'
+
+        result = build_interpolated_string(cmd_line)
+
+        parts = result.split("; ")
+        self.assertEqual(len(parts), 2)
+
+        # Pre command
+        self.assertEqual(parts[0], "nvidia-settings -a GPUPowerMizerMode=1")
+
+        # Main command
+        main_cmd = parts[1]
+        # Check gamescope command with LD_PRELOAD unset
+        self.assertIn(
+            "env -u LD_PRELOAD gamescope -f -W 2560 -H 1440 --force-grab-cursor",
+            main_cmd,
+        )
+
+        # Check app command with LD_PRELOAD set at the beginning
+        expected_ld_preload = "LD_PRELOAD=/usr/lib/mangohud/libMangoHud.so:/usr/lib/gamemode/libgamemodeauto.so"
+        self.assertIn(
+            f"-- env {expected_ld_preload} env STEAM_COMPAT_DATA_PATH=/home/user/.steam steam",
+            main_cmd,
+        )
+
     def test_main_gamescope_style(self):
         # Mock sys.argv to simulate command-line arguments
         original_sys_argv = sys.argv
@@ -197,6 +299,31 @@ class TestNSCB(unittest.TestCase):
             self.assertIn("/usr/bin/someapp", called_command)
 
         # Restore original sys.argv
+        sys.argv = original_sys_argv
+
+    def test_main_with_ld_preload_environment(self):
+        """Test main() function with LD_PRELOAD in the environment."""
+        original_sys_argv = sys.argv
+        sys.argv = ["nscb.py", "-f", "--", "vkcube"]
+
+        mock_env = {
+            "LD_PRELOAD": "/usr/lib/mangohud/libMangoHud.so",
+            "PATH": "/usr/bin:/bin",
+        }
+
+        with patch("nscb.find_executable", return_value=True), patch(
+            "nscb.is_gamescope_active", return_value=False
+        ), patch("os.system") as mock_system, patch("builtins.print"), patch(
+            "os.environ", mock_env
+        ):
+
+            main()
+
+            called_command = mock_system.call_args[0][0]
+            # The main() function doesn't directly handle LD_PRELOAD from os.environ in the current implementation
+            # This test verifies the current behavior - it should be improved to handle LD_PRELOAD from environment
+            self.assertIn("gamescope -f -- vkcube", called_command)
+
         sys.argv = original_sys_argv
 
     def test_is_gamescope_active(self):

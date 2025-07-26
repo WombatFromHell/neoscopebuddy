@@ -105,7 +105,7 @@ def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[s
     # Define which flags take values
     value_flags = {"-W", "-H"}
     # Define mutually exclusive flag groups
-    exclusives = [{"--windowed", "-f"}, {"--grab-cursor", "--force-grab-cursor"}]
+    exclusives = [{"--windowed", "-f"}]
 
     # Split at '--'
     def split_dash(args: List[str]) -> Tuple[List[str], List[str]]:
@@ -328,11 +328,11 @@ def build_interpolated_string(cmd_line: str) -> str:
             combined_gamescope_args = nscb_args + gamescope_args
 
             if ldpreload_str:
-                gamescope_cmd = ["gamescope", "-f"] + combined_gamescope_args
+                gamescope_cmd = ["gamescope"] + combined_gamescope_args
                 app_cmd = ["env", ldpreload_str] + app_command
                 result = f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)} -- {" ".join(app_cmd)}; {post_cmd}'
             else:
-                gamescope_cmd = ["gamescope", "-f"] + combined_gamescope_args
+                gamescope_cmd = ["gamescope"] + combined_gamescope_args
                 if app_command:
                     result = f'{pre_cmd}; {" ".join(gamescope_cmd)} -- {" ".join(app_command)}; {post_cmd}'
                 else:
@@ -340,14 +340,14 @@ def build_interpolated_string(cmd_line: str) -> str:
         except ValueError:
             # No -- separator, treat everything as gamescope args
             combined_gamescope_args = nscb_args + gamescope_app_args
-            gamescope_cmd = ["gamescope", "-f"] + combined_gamescope_args
+            gamescope_cmd = ["gamescope"] + combined_gamescope_args
             if ldpreload_str:
                 result = f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)}; {post_cmd}'
             else:
                 result = f'{pre_cmd}; {" ".join(gamescope_cmd)}; {post_cmd}'
     else:
         # No gamescope_app_args, just use nscb_args
-        gamescope_cmd = ["gamescope", "-f"] + nscb_args
+        gamescope_cmd = ["gamescope"] + nscb_args
         if ldpreload_str:
             result = (
                 f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)}; {post_cmd}'
