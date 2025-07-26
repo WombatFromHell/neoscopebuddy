@@ -1,379 +1,299 @@
 #!/usr/bin/python3
 
-import re
 import os
-import sys
-import subprocess
-from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+import pty
+import pwd
+import re
 import shlex
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 
-def find_config_file() -> Optional[Path]:
-    """Find and return the path to nscb.conf configuration file."""
-    xdg_config_home = os.getenv("XDG_CONFIG_HOME")
-    if xdg_config_home:
-        config_path = Path(xdg_config_home) / "nscb.conf"
-        if config_path.exists():
-            return config_path
+class NSCBConfig:
+    """Handles configuration file operations."""
 
-    # Fix: Use HOME environment variable correctly for the .config path
-    home = os.getenv("HOME")
-    if home:
-        home_config_path = Path(home) / ".config" / "nscb.conf"
-        if home_config_path.exists():
-            return home_config_path
+    @staticmethod
+    def find_config_file() -> Optional[Path]:
+        """Find and return the path to nscb.conf configuration file."""
+        # Check XDG_CONFIG_HOME first
+        if xdg_config_home := os.getenv("XDG_CONFIG_HOME"):
+            config_path = Path(xdg_config_home) / "nscb.conf"
+            if config_path.exists():
+                return config_path
 
-    return None
+        # Fall back to ~/.config/nscb.conf
+        if home := os.getenv("HOME"):
+            home_config_path = Path(home) / ".config" / "nscb.conf"
+            if home_config_path.exists():
+                return home_config_path
 
+        return None
 
-def find_executable(name: str) -> bool:
-    """Check if an executable is in the system PATH."""
-    path_dirs = os.environ["PATH"].split(":")
-    for path_dir in path_dirs:
-        executable_path = Path(path_dir) / name
-        if (
-            executable_path.exists()
-            and executable_path.is_file()
-            and os.access(executable_path, os.X_OK)
-        ):
-            return True
-    return False
-
-
-def load_config(config_file: Path) -> Dict[str, str]:
-    """Load configuration from file and return as dictionary."""
-    config = {}
-    with open(config_file, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip()
-                # Remove surrounding quotes if present
-                if len(value) >= 2 and (
-                    (value.startswith('"') and value.endswith('"'))
-                    or (value.startswith("'") and value.endswith("'"))
-                ):
-                    value = value[1:-1]
-
-                config[key] = value
-    return config
+    @staticmethod
+    def load_config(config_file: Path) -> Dict[str, str]:
+        """Load configuration from file and return as dictionary."""
+        config = {}
+        with open(config_file, "r") as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if line and not line.startswith("#"):
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Remove surrounding quotes if present
+                    if (
+                        len(value) >= 2
+                        and value[0] == value[-1]
+                        and value[0] in ('"', "'")
+                    ):
+                        value = value[1:-1]
+                    config[key] = value
+        return config
 
 
-def parse_arguments(args: List[str]) -> Tuple[Optional[str], List[str]]:
-    """Parse command line arguments to extract profile and remaining args.
-    Returns:
-        Tuple of (profile_name, remaining_args)
-    """
-    profile = None
-    remaining_args = []
-    i = 0
+class ArgumentParser:
+    """Handles command line argument parsing and merging."""
 
-    while i < len(args):
-        arg = args[i]
-        if arg == "-p" or arg == "--profile":
-            # Next argument should be the profile name
-            if i + 1 < len(args):
-                profile = args[i + 1]
-                i += 2  # Skip both the flag and its value
+    VALUE_FLAGS = {"-W", "-H", "-O", "-o"}
+    EXCLUSIVE_GROUPS = [{"-f", "--fullscreen", "-b", "--borderless"}]
+
+    @staticmethod
+    def parse_profile_args(args: List[str]) -> Tuple[Optional[str], List[str]]:
+        """Parse command line arguments to extract profile and remaining args."""
+        profile = None
+        remaining_args = []
+        i = 0
+
+        while i < len(args):
+            arg = args[i]
+            if arg in ("-p", "--profile"):
+                if i + 1 < len(args):
+                    profile = args[i + 1]
+                    i += 2
+                else:
+                    print(f"Error: {arg} requires a value", file=sys.stderr)
+                    sys.exit(1)
+            elif arg.startswith("--profile="):
+                profile = arg.split("=", 1)[1]
+                i += 1
             else:
-                print(f"Error: {arg} requires a value", file=sys.stderr)
-                sys.exit(1)
-        elif arg.startswith("--profile="):
-            # Handle --profile=value format
-            profile = arg.split("=", 1)[1]
-            i += 1
-        else:
-            # This argument is not related to profile, pass it through
-            remaining_args.append(arg)
-            i += 1
+                remaining_args.append(arg)
+                i += 1
 
-    return profile, remaining_args
+        return profile, remaining_args
 
-
-def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[str]:
-    """Merge profile arguments with override arguments.
-    Override arguments take precedence over profile arguments for conflicting options.
-    """
-    if not profile_args:
-        return override_args
-    if not override_args:
-        return profile_args
-
-    # Define which flags take values
-    value_flags = {"-W", "-H"}
-    # Define mutually exclusive flag groups
-    exclusives = [{"--windowed", "-f"}]
-
-    # Split at '--'
-    def split_dash(args: List[str]) -> Tuple[List[str], List[str]]:
+    @classmethod
+    def _split_at_separator(cls, args: List[str]) -> Tuple[List[str], List[str]]:
+        """Split arguments at '--' separator."""
         if "--" in args:
             idx = args.index("--")
             return args[:idx], args[idx:]
         return args, []
 
-    prof_before, prof_after = split_dash(profile_args)
-    over_before, over_after = split_dash(override_args)
-
-    # Parse into sequences of flag/value and positionals
-    def separate(
-        arg_list: List[str],
+    @classmethod
+    def _separate_flags_and_positionals(
+        cls, args: List[str]
     ) -> Tuple[List[Tuple[str, Optional[str]]], List[str]]:
-        flags_seq: List[Tuple[str, Optional[str]]] = []
-        pos_seq: List[str] = []
+        """Separate flag/value pairs from positional arguments."""
+        flags = []
+        positionals = []
         i = 0
-        while i < len(arg_list):
-            arg = arg_list[i]
+
+        while i < len(args):
+            arg = args[i]
             if arg.startswith("-"):
                 if (
-                    arg in value_flags
-                    and i + 1 < len(arg_list)
-                    and not arg_list[i + 1].startswith("-")
+                    arg in cls.VALUE_FLAGS
+                    and i + 1 < len(args)
+                    and not args[i + 1].startswith("-")
                 ):
-                    flags_seq.append((arg, arg_list[i + 1]))
+                    flags.append((arg, args[i + 1]))
                     i += 2
                 else:
-                    flags_seq.append((arg, None))
+                    flags.append((arg, None))
                     i += 1
             else:
-                pos_seq.append(arg)
+                positionals.append(arg)
                 i += 1
-        return flags_seq, pos_seq
 
-    p_flags, p_pos = separate(prof_before)
-    o_flags, o_pos = separate(over_before)
+        return flags, positionals
 
-    # Start with profile flags, then apply overrides
-    merged_flags: List[Tuple[str, Optional[str]]] = []
-    # Use set to track which flags have been added
-    for flag, val in p_flags:
-        merged_flags.append((flag, val))
+    @classmethod
+    def merge_arguments(
+        cls, profile_args: List[str], override_args: List[str]
+    ) -> List[str]:
+        """Merge profile arguments with override arguments."""
+        if not profile_args:
+            return override_args
+        if not override_args:
+            return profile_args
 
-    for flag, val in o_flags:
-        # Remove any exclusive-group flags that conflict
-        for group in exclusives:
-            if flag in group:
-                merged_flags = [(f, v) for (f, v) in merged_flags if f not in group]
-                break
-        # Also remove same flag if present earlier
-        merged_flags = [(f, v) for (f, v) in merged_flags if f != flag]
-        # Append this override
-        merged_flags.append((flag, val))
+        # Split at '--' separator
+        prof_before, prof_after = cls._split_at_separator(profile_args)
+        over_before, over_after = cls._split_at_separator(override_args)
 
-        # Build final ordered flags: use profile order, then any override-only flags, then any remaining
-    # Create a map of merged flags
-    merged_map: Dict[str, Optional[str]] = {f: v for f, v in merged_flags}
-    ordered_flags: List[Tuple[str, Optional[str]]] = []
-    # 1. Flags in profile sequence
-    for f, _ in p_flags:
-        if f in merged_map:
-            ordered_flags.append((f, merged_map.pop(f)))
-    # 2. Flags in override sequence that weren't in profile
-    for f, _ in o_flags:
-        if f in merged_map:
-            ordered_flags.append((f, merged_map.pop(f)))
-    # 3. Any remaining flags
-    for f, v in merged_flags:
-        if f in merged_map:
-            ordered_flags.append((f, merged_map.pop(f)))
+        # Separate flags and positionals
+        p_flags, p_pos = cls._separate_flags_and_positionals(prof_before)
+        o_flags, o_pos = cls._separate_flags_and_positionals(over_before)
 
-    # Flatten into result
-    result: List[str] = []
-    for f, v in ordered_flags:
-        result.append(f)
-        if v is not None:
-            result.append(v)
-    # Add positionals
-    result.extend(p_pos)
-    result.extend(o_pos)
-    # Add suffix
-    if over_after:
-        result.extend(over_after)
-    else:
-        result.extend(prof_after)
+        # Start with profile flags
+        merged_flags = list(p_flags)
 
-    return result
+        # Apply overrides
+        for flag, val in o_flags:
+            # Remove conflicting exclusive flags
+            for group in cls.EXCLUSIVE_GROUPS:
+                if flag in group:
+                    merged_flags = [(f, v) for (f, v) in merged_flags if f not in group]
+                    break
+
+            # Remove same flag if present
+            merged_flags = [(f, v) for (f, v) in merged_flags if f != flag]
+            merged_flags.append((flag, val))
+
+        # Build result maintaining order
+        result = []
+        for flag, value in merged_flags:
+            result.append(flag)
+            if value is not None:
+                result.append(value)
+
+        # Add positionals and suffix
+        result.extend(p_pos)
+        result.extend(o_pos)
+        result.extend(over_after if over_after else prof_after)
+
+        return result
 
 
-def is_gamescope_active() -> bool:
-    """Determine whether the system is already running under an existing gamescope compositor."""
+class GameScopeChecker:
+    """Checks if gamescope is active or available."""
 
-    # Check XDG_CURRENT_DESKTOP == "gamescope"
-    if os.environ.get("XDG_CURRENT_DESKTOP", "") == "gamescope":
-        return True
-
-    # Check for a process that matches the pattern:
-    # steam.sh -.+ -steampal
-    try:
-        result = subprocess.run(
-            ["ps", "ax"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,  # Ignore errors from ps
-            text=True,
-            check=False,
+    @staticmethod
+    def find_executable(name: str) -> bool:
+        """Check if an executable is in the system PATH."""
+        return any(
+            (Path(path_dir) / name).is_file()
+            and os.access(Path(path_dir) / name, os.X_OK)
+            for path_dir in os.environ["PATH"].split(":")
+            if Path(path_dir).exists()
         )
-        output = result.stdout
 
-        if re.search(r"steam\.sh .+ -steampal", output):
+    @staticmethod
+    def is_gamescope_active() -> bool:
+        """Determine whether the system is already running under gamescope."""
+        # Check XDG_CURRENT_DESKTOP
+        if os.environ.get("XDG_CURRENT_DESKTOP", "") == "gamescope":
             return True
 
-    except Exception:
-        # Ignore errors, assume no such process is running
-        pass
-
-    return False
-
-
-def parse_env_and_command(cmd_line: str) -> Tuple[Dict[str, str], List[str]]:
-    """Parse environment variables and command from a command line string."""
-    # Use shlex to properly handle quotes
-    tokens = shlex.split(cmd_line)
-
-    # Extract environment variables (key=value at the start)
-    env_vars = {}
-    app_index = 0
-
-    for i, token in enumerate(tokens):
-        if "=" in token and not token.startswith(("-", "/")):
-            key, value = token.split("=", 1)
-            env_vars[key] = value
-            app_index = i + 1
-        else:
-            app_index = i
-            break
-
-    # Extract the command part
-    command_parts = tokens[app_index:]
-    return env_vars, command_parts
-
-
-def extract_nscb_args(
-    command_parts: List[str],
-) -> Tuple[Optional[str], List[str], List[str]]:
-    """Extract profile, nscb args, and gamescope+app args from command parts.
-    Returns:
-        Tuple of (profile_name, nscb_args, gamescope_app_args)
-    """
-    # Find nscb.py and process arguments
-    try:
-        nscb_index = command_parts.index("nscb.py")
-        # Get everything after nscb.py
-        remaining_parts = command_parts[nscb_index + 1 :]
-    except ValueError:
-        # nscb.py not found, treat everything as gamescope+app args
-        return None, [], command_parts
-
-    # Parse nscb.py arguments and separate gamescope arguments
-    profile = None
-    nscb_args = []
-    gamescope_app_args = []
-    i = 0
-
-    # Process nscb.py reserved arguments
-    while i < len(remaining_parts):
-        token = remaining_parts[i]
-
-        # Check for reserved nscb.py arguments
-        if token in ["-p", "--profile"]:
-            # Next argument should be the profile name or value
-            if i + 1 < len(remaining_parts):
-                profile = remaining_parts[i + 1]
-                i += 2  # Skip both the flag and its value
-            else:
-                print(f"Error: {token} requires a value", file=sys.stderr)
-                sys.exit(1)
-        elif token.startswith("--profile="):
-            # Handle --profile=value format
-            profile = token.split("=", 1)[1]
-            i += 1
-        elif token == "--":
-            # Found the separator, everything after this goes to gamescope+app
-            gamescope_app_args = remaining_parts[i:]
-            break
-        else:
-            # This is a gamescope argument that should be passed through
-            nscb_args.append(token)
-            i += 1
-
-    return profile, nscb_args, gamescope_app_args
-
-
-def build_interpolated_string(cmd_line: str) -> str:
-    """Build the interpolated command string from a full command line."""
-    # Parse environment variables and command
-    env_vars, command_parts = parse_env_and_command(cmd_line)
-
-    # Extract profile and separate arguments
-    _, nscb_args, gamescope_app_args = extract_nscb_args(command_parts)
-
-    # Extract specific environment variables
-    ldpreload_str = env_vars.get("LD_PRELOAD", "")
-    if ldpreload_str:
-        ldpreload_str = f"LD_PRELOAD={ldpreload_str}"
-
-    pre_cmd = env_vars.get("NSCB_PRE_CMD", env_vars.get("NSCB_PRECMD", ""))
-    post_cmd = env_vars.get("NSCB_POST_CMD", env_vars.get("NSCB_POSTCMD", ""))
-
-    # Build the gamescope command
-    # Fix: Preserve the -- separator when building the command
-    if gamescope_app_args:
+        # Check for steam.sh process with -steampal
         try:
-            separator_index = gamescope_app_args.index("--")
-            gamescope_args = gamescope_app_args[:separator_index]
-            app_command = gamescope_app_args[separator_index + 1 :]
-
-            # Combine nscb_args and gamescope_args
-            combined_gamescope_args = nscb_args + gamescope_args
-
-            if ldpreload_str:
-                gamescope_cmd = ["gamescope"] + combined_gamescope_args
-                app_cmd = ["env", ldpreload_str] + app_command
-                result = f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)} -- {" ".join(app_cmd)}; {post_cmd}'
-            else:
-                gamescope_cmd = ["gamescope"] + combined_gamescope_args
-                if app_command:
-                    result = f'{pre_cmd}; {" ".join(gamescope_cmd)} -- {" ".join(app_command)}; {post_cmd}'
-                else:
-                    result = f'{pre_cmd}; {" ".join(gamescope_cmd)}; {post_cmd}'
-        except ValueError:
-            # No -- separator, treat everything as gamescope args
-            combined_gamescope_args = nscb_args + gamescope_app_args
-            gamescope_cmd = ["gamescope"] + combined_gamescope_args
-            if ldpreload_str:
-                result = f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)}; {post_cmd}'
-            else:
-                result = f'{pre_cmd}; {" ".join(gamescope_cmd)}; {post_cmd}'
-    else:
-        # No gamescope_app_args, just use nscb_args
-        gamescope_cmd = ["gamescope"] + nscb_args
-        if ldpreload_str:
-            result = (
-                f'{pre_cmd}; env -u LD_PRELOAD {" ".join(gamescope_cmd)}; {post_cmd}'
+            result = subprocess.run(
+                ["ps", "ax"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=False,
             )
-        else:
-            result = f'{pre_cmd}; {" ".join(gamescope_cmd)}; {post_cmd}'
+            return bool(re.search(r"steam\.sh .+ -steampal", result.stdout))
+        except Exception:
+            return False
 
-    return result.strip("; ")
+
+class CommandBuilder:
+    """Builds and executes the final gamescope command."""
+
+    @staticmethod
+    def get_env_commands() -> Tuple[str, str]:
+        """Get pre and post commands from environment variables."""
+        pre_cmd = os.environ.get("NSCB_PRE_CMD", os.environ.get("NSCB_PRECMD", ""))
+        post_cmd = os.environ.get("NSCB_POST_CMD", os.environ.get("NSCB_POSTCMD", ""))
+        return pre_cmd.strip(), post_cmd.strip()
+
+    @staticmethod
+    def build_command_string(parts: List[str]) -> str:
+        """Build command string from parts, filtering empty parts."""
+        return "; ".join(part for part in parts if part)
+
+    @classmethod
+    def run_with_pty(cls, cmd: str) -> int:
+        pid, fd = pty.fork()
+        # use the user's shell
+        shell = pwd.getpwuid(os.getuid()).pw_shell
+        if pid == 0:
+            # In child — replace process image with target command
+            os.execvp(shell, [shell, "-c", cmd])
+        else:
+            # In parent — stream output
+            try:
+                with os.fdopen(fd, "rb", buffering=0) as master:
+                    while True:
+                        data = master.read(1024)
+                        if not data:
+                            break
+                        sys.stdout.buffer.write(data)
+                        sys.stdout.flush()
+            except OSError:
+                pass
+
+            _, status = os.waitpid(pid, 0)
+            # Extract real exit code
+            if os.WIFEXITED(status):
+                return os.WEXITSTATUS(status)
+            else:
+                return 1
+
+    @classmethod
+    def execute_gamescope_command(cls, final_args: List[str]) -> None:
+        """Execute the gamescope command with proper handling."""
+        pre_cmd, post_cmd = cls.get_env_commands()
+
+        if not GameScopeChecker.is_gamescope_active():
+            # Run with gamescope
+            gamescope_cmd = ["gamescope"] + final_args
+            gamescope_str = " ".join(shlex.quote(arg) for arg in gamescope_cmd)
+            full_command = cls.build_command_string([pre_cmd, gamescope_str, post_cmd])
+        else:
+            # Extract app args (after '--') and run directly
+            try:
+                dash_index = final_args.index("--")
+                app_args = final_args[dash_index + 1 :]
+                app_str = (
+                    " ".join(shlex.quote(arg) for arg in app_args) if app_args else ""
+                )
+                full_command = cls.build_command_string([pre_cmd, app_str, post_cmd])
+            except ValueError:
+                full_command = cls.build_command_string([pre_cmd, post_cmd])
+
+        # Execute command safely using subprocess
+        if full_command:
+            print("Executing:", full_command)
+            try:
+                exit_code = CommandBuilder.run_with_pty(full_command)
+                sys.exit(exit_code)
+            except Exception as e:
+                print(f"Error executing command: {e}")
 
 
 def main() -> None:
-    if not find_executable("gamescope"):
+    """Main entry point."""
+    # Check if gamescope is available
+    if not GameScopeChecker.find_executable("gamescope"):
         print(
             "Error: gamescope not found in PATH or is not executable", file=sys.stderr
         )
         sys.exit(1)
 
-    # Skip the script name (sys.argv[0])
+    # Parse command line arguments
     command_args = sys.argv[1:]
+    profile, gamescope_args = ArgumentParser.parse_profile_args(command_args)
 
-    # Parse profile arguments manually
-    profile, gamescope_args = parse_arguments(command_args)
-
-    profile_args: List[str] = []
+    # Load profile arguments if specified
+    profile_args = []
     if profile:
-        config_file = find_config_file()
+        config_file = NSCBConfig.find_config_file()
         if not config_file:
             print(
                 "Error: Could not find nscb.conf in $XDG_CONFIG_HOME/nscb.conf or $HOME/.config/nscb.conf",
@@ -381,59 +301,16 @@ def main() -> None:
             )
             sys.exit(1)
 
-        config = load_config(config_file)
-
-        if profile in config:
-            # Use shlex.split to properly handle quoted arguments
-            profile_args = shlex.split(config[profile])
-        else:
+        config = NSCBConfig.load_config(config_file)
+        if profile not in config:
             print(f"Error: Profile '{profile}' not found", file=sys.stderr)
             sys.exit(1)
 
-    # Merge profile args with command line args (command line takes precedence)
-    final_args = merge_arguments(profile_args, gamescope_args)
+        profile_args = shlex.split(config[profile])
 
-    # Get pre and post commands from environment variables
-    pre_cmd = os.environ.get("NSCB_PRE_CMD", os.environ.get("NSCB_PRECMD", ""))
-    post_cmd = os.environ.get("NSCB_POST_CMD", os.environ.get("NSCB_POSTCMD", ""))
-
-    # Build the final command parts properly
-    if not is_gamescope_active():
-        gamescope_cmd = ["gamescope"] + final_args
-        gamescope_str = " ".join(shlex.quote(arg) for arg in gamescope_cmd)
-
-        # Build full command with pre/post commands
-        command_parts = []
-        if pre_cmd.strip():
-            command_parts.append(pre_cmd.strip())
-        command_parts.append(gamescope_str)
-        if post_cmd.strip():
-            command_parts.append(post_cmd.strip())
-
-        full_command = "; ".join(command_parts)
-    else:
-        # Extract the application to run (after '--')
-        try:
-            dash_index = final_args.index("--")
-            app_args = final_args[dash_index + 1 :]
-        except ValueError:
-            app_args = []
-
-        # Construct the command that runs the application directly, with pre/post commands
-        command_parts = []
-        if pre_cmd.strip():
-            command_parts.append(pre_cmd.strip())
-        if app_args:
-            app_str = " ".join(shlex.quote(arg) for arg in app_args)
-            command_parts.append(app_str)
-        if post_cmd.strip():
-            command_parts.append(post_cmd.strip())
-
-        full_command = "; ".join(command_parts) if command_parts else ""
-
-    print("Executing:", full_command)
-    if full_command:
-        os.system(full_command)
+    # Merge arguments and execute
+    final_args = ArgumentParser.merge_arguments(profile_args, gamescope_args)
+    CommandBuilder.execute_gamescope_command(final_args)
 
 
 if __name__ == "__main__":
