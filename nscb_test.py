@@ -210,6 +210,8 @@ class TestGameScopeChecker(BaseTestCase):
 
     def test_is_gamescope_active_detection_methods(self):
         """Test different gamescope detection methods."""
+        import io
+
         test_cases = [
             # (xdg_desktop, ps_output, expected)
             ("gamescope", "", True),  # XDG desktop detection
@@ -220,17 +222,16 @@ class TestGameScopeChecker(BaseTestCase):
         for xdg_desktop, ps_output, expected in test_cases:
             with self.subTest(xdg=xdg_desktop, ps=bool(ps_output)):
                 with patch("os.environ.get", return_value=xdg_desktop), patch(
-                    "subprocess.run"
-                ) as mock_run:
+                    "nscb.run_nonblocking", return_value=0
+                ), patch("io.StringIO", return_value=io.StringIO(ps_output)):
 
-                    mock_run.return_value.stdout = ps_output
                     result = GameScopeChecker.is_gamescope_active()
                     self.assertEqual(result, expected)
 
     def test_is_gamescope_active_exception_handling(self):
         """Test exception handling in gamescope detection."""
         with patch("os.environ.get", return_value=""), patch(
-            "subprocess.run", side_effect=Exception("Process error")
+            "nscb.run_nonblocking", side_effect=Exception("Process error")
         ):
             result = GameScopeChecker.is_gamescope_active()
             self.assertFalse(result)
@@ -292,9 +293,7 @@ class TestCommandBuilder(BaseTestCase):
         # Test normal mode (gamescope not active)
         with self.mock_env({}), patch.object(
             GameScopeChecker, "is_gamescope_active", return_value=False
-        ), patch.object(
-            CommandBuilder, "run_with_pty", return_value=0
-        ) as mock_run, patch(
+        ), patch("nscb.run_nonblocking", return_value=0) as mock_run, patch(
             "builtins.print"
         ), patch(
             "sys.exit"
@@ -318,9 +317,7 @@ class TestCommandBuilder(BaseTestCase):
             with self.subTest(args=final_args):
                 with self.mock_env({}), patch.object(
                     GameScopeChecker, "is_gamescope_active", return_value=True
-                ), patch.object(
-                    CommandBuilder, "run_with_pty", return_value=0
-                ) as mock_run, patch(
+                ), patch("nscb.run_nonblocking", return_value=0) as mock_run, patch(
                     "builtins.print"
                 ), patch(
                     "sys.exit"
@@ -333,8 +330,7 @@ class TestCommandBuilder(BaseTestCase):
                         called_command = mock_run.call_args[0][0]
                         self.assertEqual(called_command, expected_in_command)
                     else:
-                        # When there's no command to run, it should still call run_with_pty
-                        # but with an empty command (which gets filtered out)
+                        # When there's no command to run, it should exit cleanly without calling run_nonblocking
                         mock_run.assert_not_called()
 
     def test_execute_gamescope_command_with_env_commands(self):
@@ -344,9 +340,7 @@ class TestCommandBuilder(BaseTestCase):
 
         with self.mock_env(env_vars), patch.object(
             GameScopeChecker, "is_gamescope_active", return_value=False
-        ), patch.object(
-            CommandBuilder, "run_with_pty", return_value=0
-        ) as mock_run, patch(
+        ), patch("nscb.run_nonblocking", return_value=0) as mock_run, patch(
             "builtins.print"
         ), patch(
             "sys.exit"
@@ -357,6 +351,40 @@ class TestCommandBuilder(BaseTestCase):
             called_command = mock_run.call_args[0][0]
             expected = "echo start; gamescope -f -- steam; echo end"
             self.assertEqual(called_command, expected)
+
+    def test_execute_gamescope_command_empty_command(self):
+        """Test execution when no command is generated."""
+        final_args = ["-f", "-W", "1920"]  # No app specified
+
+        with self.mock_env({}), patch.object(
+            GameScopeChecker, "is_gamescope_active", return_value=True
+        ), patch("nscb.run_nonblocking") as mock_run, patch("builtins.print"), patch(
+            "sys.exit"
+        ) as mock_exit:
+
+            CommandBuilder.execute_gamescope_command(final_args)
+
+            # Should exit cleanly without calling run_nonblocking
+            mock_run.assert_not_called()
+            mock_exit.assert_called_once_with(0)
+
+    def test_execute_gamescope_command_exception_handling(self):
+        """Test exception handling during command execution."""
+        final_args = ["-f", "--", "steam"]
+
+        with self.mock_env({}), patch.object(
+            GameScopeChecker, "is_gamescope_active", return_value=False
+        ), patch(
+            "nscb.run_nonblocking", side_effect=Exception("Execution error")
+        ), patch(
+            "builtins.print"
+        ), patch(
+            "sys.exit"
+        ) as mock_exit:
+
+            CommandBuilder.execute_gamescope_command(final_args)
+
+            mock_exit.assert_called_once_with(1)
 
 
 class TestMainIntegration(BaseTestCase):
@@ -419,8 +447,8 @@ class TestMainIntegration(BaseTestCase):
                     GameScopeChecker,
                     "is_gamescope_active",
                     return_value=gamescope_active,
-                ), patch.object(
-                    CommandBuilder, "run_with_pty", return_value=0
+                ), patch(
+                    "nscb.run_nonblocking", return_value=0
                 ) as mock_run, patch(
                     "builtins.print"
                 ), patch(
@@ -472,8 +500,8 @@ class TestMainIntegration(BaseTestCase):
             NSCBConfig, "load_config", return_value=mock_config
         ), patch.object(
             GameScopeChecker, "is_gamescope_active", return_value=False
-        ), patch.object(
-            CommandBuilder, "run_with_pty", return_value=0
+        ), patch(
+            "nscb.run_nonblocking", return_value=0
         ) as mock_run, patch(
             "builtins.print"
         ), patch(
@@ -494,6 +522,118 @@ class TestMainIntegration(BaseTestCase):
             self.assertIn("-W 2560", called_command)  # Override arg
             self.assertIn("steam", called_command)  # Application
             self.assertIn("echo end", called_command)  # Post command
+
+    def test_main_no_app_specified_active_mode(self):
+        """Test main function when no app is specified in active gamescope mode."""
+        sys.argv = ["nscb.py", "-f", "-W", "1920"]  # No -- separator
+
+        with patch.object(
+            GameScopeChecker, "find_executable", return_value=True
+        ), patch.object(
+            NSCBConfig, "find_config_file", return_value=None
+        ), patch.object(
+            GameScopeChecker, "is_gamescope_active", return_value=True
+        ), patch(
+            "nscb.run_nonblocking"
+        ) as mock_run, patch(
+            "builtins.print"
+        ), patch(
+            "sys.exit"
+        ) as mock_exit, self.mock_env(
+            {}
+        ):
+            main()
+            # Should exit cleanly without calling run_nonblocking
+            mock_run.assert_not_called()
+            mock_exit.assert_called_with(0)
+
+
+# Additional test for the run_nonblocking function itself
+class TestRunNonblocking(BaseTestCase):
+    """Test the run_nonblocking function."""
+
+    def test_run_nonblocking_success(self):
+        """Test successful command execution."""
+        import subprocess
+
+        with patch("subprocess.Popen") as mock_popen, patch(
+            "selectors.DefaultSelector"
+        ) as mock_selector:
+            # Mock process
+            mock_process = mock_popen.return_value
+            mock_process.stdout = None
+            mock_process.stderr = None
+            mock_process.wait.return_value = 0
+
+            # Mock selector
+            mock_sel = mock_selector.return_value
+            mock_sel.get_map.return_value = (
+                {}
+            )  # Empty map means no file objects to read
+
+            from nscb import run_nonblocking
+
+            result = run_nonblocking("echo test")
+
+            self.assertEqual(result, 0)
+            mock_popen.assert_called_once_with(
+                "echo test",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                bufsize=0,
+                text=True,
+            )
+
+    def test_run_nonblocking_with_output(self):
+        """Test command execution with output handling."""
+        import io
+        from unittest.mock import MagicMock
+
+        with patch("subprocess.Popen") as mock_popen, patch(
+            "selectors.DefaultSelector"
+        ) as mock_selector, patch("sys.stdout") as _, patch("sys.stderr") as _:
+
+            # Create mock file objects
+            mock_stdout_file = io.StringIO("test output\n")
+            mock_stderr_file = io.StringIO("test error\n")
+
+            # Mock process
+            mock_process = mock_popen.return_value
+            mock_process.stdout = mock_stdout_file
+            mock_process.stderr = mock_stderr_file
+            mock_process.wait.return_value = 0
+
+            # Mock selector behavior
+            mock_sel = mock_selector.return_value
+            mock_key_stdout = MagicMock()
+            mock_key_stdout.fileobj = mock_stdout_file
+            mock_key_stderr = MagicMock()
+            mock_key_stderr.fileobj = mock_stderr_file
+
+            # Simulate reading from both stdout and stderr, then EOF
+            call_count = 0
+
+            def mock_select():
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    return [(mock_key_stdout, None)]
+                elif call_count == 2:
+                    return [(mock_key_stderr, None)]
+                else:
+                    return []
+
+            mock_sel.select.side_effect = mock_select
+
+            # First return non-empty map, then empty map
+            mock_sel.get_map.side_effect = [True, True, False]
+
+            from nscb import run_nonblocking
+
+            result = run_nonblocking("echo test")
+
+            self.assertEqual(result, 0)
 
 
 if __name__ == "__main__":
