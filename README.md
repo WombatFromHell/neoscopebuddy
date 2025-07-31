@@ -6,6 +6,7 @@ Profiles are defined in `$HOME/.config/nscb.conf` using simple `KEY=VALUE` lines
 
 ```ini
 someapp=-f -W 1280 -H 720
+someotherapp=-b -W 1920 -H 1080
 ```
 
 ## Example usage
@@ -18,6 +19,12 @@ Profiles can also be used with pass-through arguments and the arguments will ove
 
 ```bash
 nscb.py -p someapp -W 3840 -H 2160 --hdr-enabled -- /usr/bin/someapp
+```
+
+Alternatively, multiple profiles can be chained together and the last one will overwrite conflicting exclusive arguments from the others:
+
+```bash
+nscb.py -p someapp -p someotherapp -- /usr/bin/someapp
 ```
 
 ## Direct pass-through

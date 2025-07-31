@@ -97,9 +97,9 @@ class ArgumentParser:
     EXCLUSIVE_GROUPS = [{"-f", "--fullscreen", "-b", "--borderless"}]
 
     @staticmethod
-    def parse_profile_args(args: List[str]) -> Tuple[Optional[str], List[str]]:
-        """Parse command line arguments to extract profile and remaining args."""
-        profile = None
+    def parse_profile_args(args: List[str]) -> Tuple[List[str], List[str]]:
+        """Parse command line arguments to extract profiles and remaining args."""
+        profiles = []
         remaining_args = []
         i = 0
 
@@ -107,19 +107,19 @@ class ArgumentParser:
             arg = args[i]
             if arg in ("-p", "--profile"):
                 if i + 1 < len(args):
-                    profile = args[i + 1]
+                    profiles.append(args[i + 1])
                     i += 2
                 else:
                     print(f"Error: {arg} requires a value", file=sys.stderr)
                     sys.exit(1)
             elif arg.startswith("--profile="):
-                profile = arg.split("=", 1)[1]
+                profiles.append(arg.split("=", 1)[1])
                 i += 1
             else:
                 remaining_args.append(arg)
                 i += 1
 
-        return profile, remaining_args
+        return profiles, remaining_args
 
     @classmethod
     def _split_at_separator(cls, args: List[str]) -> Tuple[List[str], List[str]]:
@@ -203,6 +203,27 @@ class ArgumentParser:
         result.extend(over_after if over_after else prof_after)
 
         return result
+
+    @classmethod
+    def merge_multiple_profiles(cls, profile_args_list: List[List[str]]) -> List[str]:
+        """
+        Merge multiple profile argument lists in order.
+        Later profiles override conflicting arguments from earlier profiles.
+        """
+        if not profile_args_list:
+            return []
+
+        if len(profile_args_list) == 1:
+            return profile_args_list[0]
+
+        # Start with the first profile
+        merged = profile_args_list[0]
+
+        # Merge each subsequent profile using the existing merge logic
+        for profile_args in profile_args_list[1:]:
+            merged = cls.merge_arguments(merged, profile_args)
+
+        return merged
 
 
 class GameScopeChecker:
@@ -303,11 +324,11 @@ def main() -> None:
 
     # Parse command line arguments
     command_args = sys.argv[1:]
-    profile, gamescope_args = ArgumentParser.parse_profile_args(command_args)
+    profiles, gamescope_args = ArgumentParser.parse_profile_args(command_args)
 
-    # Load profile arguments if specified
-    profile_args = []
-    if profile:
+    # Load profile arguments if any profiles are specified
+    merged_profile_args = []
+    if profiles:
         config_file = NSCBConfig.find_config_file()
         if not config_file:
             print(
@@ -317,14 +338,22 @@ def main() -> None:
             sys.exit(1)
 
         config = NSCBConfig.load_config(config_file)
-        if profile not in config:
-            print(f"Error: Profile '{profile}' not found", file=sys.stderr)
-            sys.exit(1)
 
-        profile_args = shlex.split(config[profile])
+        # Collect arguments for each profile
+        profile_args_list = []
+        for profile in profiles:
+            if profile not in config:
+                print(f"Error: Profile '{profile}' not found", file=sys.stderr)
+                sys.exit(1)
 
-    # Merge arguments and execute
-    final_args = ArgumentParser.merge_arguments(profile_args, gamescope_args)
+            profile_args = shlex.split(config[profile])
+            profile_args_list.append(profile_args)
+
+        # Merge all profile arguments in order
+        merged_profile_args = ArgumentParser.merge_multiple_profiles(profile_args_list)
+
+    # Merge profile arguments with command line arguments and execute
+    final_args = ArgumentParser.merge_arguments(merged_profile_args, gamescope_args)
     CommandBuilder.execute_gamescope_command(final_args)
 
 

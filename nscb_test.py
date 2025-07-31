@@ -56,8 +56,8 @@ class TestNSCBConfig(BaseTestCase):
     def test_load_config_formats(self):
         """Test loading config with various formats."""
         config_content = """# Comment line
-profile1="-f --windowed"
-profile2='-W 1920 -H 1080'
+profile1="-e -b -W 1920 -H 1080"
+profile2='-W 2560 -H 1440'
 profile3=unquoted_value
 empty_line_above=test
 """
@@ -66,8 +66,8 @@ empty_line_above=test
             config = NSCBConfig.load_config(Path("/fake/config"))
 
             expected = {
-                "profile1": "-f --windowed",
-                "profile2": "-W 1920 -H 1080",
+                "profile1": "-e -b -W 1920 -H 1080",
+                "profile2": "-W 2560 -H 1440",
                 "profile3": "unquoted_value",
                 "empty_line_above": "test",
             }
@@ -80,10 +80,10 @@ class TestArgumentParser(BaseTestCase):
     def test_parse_profile_args_formats(self):
         """Test parsing profile arguments in different formats."""
         test_cases = [
-            (["-p", "profile1", "--other"], "profile1", ["--other"]),
-            (["--profile", "profile2", "-f"], "profile2", ["-f"]),
-            (["--profile=profile3", "-W", "1920"], "profile3", ["-W", "1920"]),
-            (["--other", "-f"], None, ["--other", "-f"]),
+            (["-p", "profile1", "--other"], ["profile1"], ["--other"]),
+            (["--profile", "profile2", "-f"], ["profile2"], ["-f"]),
+            (["--profile=profile3", "-W", "1920"], ["profile3"], ["-W", "1920"]),
+            (["--other", "-f"], [], ["--other", "-f"]),
         ]
 
         for args, expected_profile, expected_remaining in test_cases:
@@ -101,19 +101,68 @@ class TestArgumentParser(BaseTestCase):
                 with patch("sys.stderr"), self.assertRaises(SystemExit):
                     ArgumentParser.parse_profile_args(args)
 
-    def test_merge_arguments_edge_cases(self):
-        """Test argument merging edge cases."""
+    def test_parse_profile_args_multiple_profiles(self):
+        """Test parsing multiple profile arguments."""
         test_cases = [
-            # (profile_args, override_args, description)
-            ([], [], "both empty"),
-            (["-f"], [], "override empty"),
-            ([], ["-f"], "profile empty"),
+            (
+                ["-p", "profile1", "-p", "profile2", "--other"],
+                ["profile1", "profile2"],
+                ["--other"],
+            ),
+            (
+                ["--profile", "profile1", "--profile=profile2", "-f"],
+                ["profile1", "profile2"],
+                ["-f"],
+            ),
+            (
+                ["-p", "profile1", "--profile", "profile2", "--profile=profile3"],
+                ["profile1", "profile2", "profile3"],
+                [],
+            ),
+            (["--profile=profile1", "-p", "profile2"], ["profile1", "profile2"], []),
         ]
 
-        for profile_args, override_args, description in test_cases:
-            with self.subTest(case=description):
-                result = ArgumentParser.merge_arguments(profile_args, override_args)
-                expected = profile_args if override_args == [] else override_args
+        for args, expected_profiles, expected_remaining in test_cases:
+            with self.subTest(args=args):
+                profiles, remaining = ArgumentParser.parse_profile_args(args)
+                self.assertEqual(profiles, expected_profiles)
+                self.assertEqual(remaining, expected_remaining)
+
+    def test_merge_multiple_profiles(self):
+        """Test merging multiple profile argument lists."""
+        test_cases = [
+            # (profile_args_list, expected_result)
+            ([], []),  # Empty list
+            ([["-f", "-W", "1920"]], ["-f", "-W", "1920"]),  # Single profile
+            (
+                [["-f", "-W", "1920"], ["-b", "-H", "1080"]],
+                [
+                    "-W",
+                    "1920",
+                    "-b",
+                    "-H",
+                    "1080",
+                ],  # -b overrides -f, -H added, -W kept in original position
+            ),
+            (
+                [["-W", "1920", "-H", "1080"], ["-W", "2560"], ["-f"]],
+                [
+                    "-H",
+                    "1080",
+                    "-W",
+                    "2560",
+                    "-f",
+                ],  # Later profiles override earlier ones
+            ),
+            (
+                [["-f", "--", "steam"], ["-b", "--", "game"]],
+                ["-b", "--", "game"],  # Later profile's app overrides earlier
+            ),
+        ]
+
+        for profile_args_list, expected in test_cases:
+            with self.subTest(profiles=len(profile_args_list)):
+                result = ArgumentParser.merge_multiple_profiles(profile_args_list)
                 self.assertEqual(result, expected)
 
     def test_merge_arguments_complex_scenarios(self):
@@ -138,7 +187,7 @@ class TestArgumentParser(BaseTestCase):
 
     def test_merge_arguments_exclusive_groups(self):
         """Test exclusive flag group handling."""
-        profile_args = ["--windowed", "-H", "1080"]
+        profile_args = ["-b", "-H", "1080"]
         override_args = ["-f"]
         result = ArgumentParser.merge_arguments(profile_args, override_args)
 
@@ -148,8 +197,8 @@ class TestArgumentParser(BaseTestCase):
         self.assertIn("1080", result)
 
         # Test a clearer exclusive group scenario
-        # When override contains -f, it should remove --windowed from earlier position
-        profile_args2 = ["-H", "1080", "--windowed"]
+        # When override contains -f, it should remove -b from earlier position
+        profile_args2 = ["-H", "1080"]
         override_args2 = ["-f"]
         result2 = ArgumentParser.merge_arguments(profile_args2, override_args2)
 
@@ -585,55 +634,40 @@ class TestRunNonblocking(BaseTestCase):
                 text=True,
             )
 
-    def test_run_nonblocking_with_output(self):
-        """Test command execution with output handling."""
-        import io
-        from unittest.mock import MagicMock
 
-        with patch("subprocess.Popen") as mock_popen, patch(
-            "selectors.DefaultSelector"
-        ) as mock_selector, patch("sys.stdout") as _, patch("sys.stderr") as _:
+def test_run_nonblocking_with_output(self):
+    """Test command execution with output handling."""
+    import io
+    from unittest.mock import MagicMock
 
-            # Create mock file objects
-            mock_stdout_file = io.StringIO("test output\n")
-            mock_stderr_file = io.StringIO("test error\n")
+    # Create mock file objects with expected content
+    stdout_content = "test output\n"
+    stderr_content = "test error\n"
 
-            # Mock process
-            mock_process = mock_popen.return_value
-            mock_process.stdout = mock_stdout_file
-            mock_process.stderr = mock_stderr_file
-            mock_process.wait.return_value = 0
+    mock_stdout_file = io.StringIO(stdout_content)
+    mock_stderr_file = io.StringIO(stderr_content)
 
-            # Mock selector behavior
-            mock_sel = mock_selector.return_value
-            mock_key_stdout = MagicMock()
-            mock_key_stdout.fileobj = mock_stdout_file
-            mock_key_stderr = MagicMock()
-            mock_key_stderr.fileobj = mock_stderr_file
+    # Mock process and selector in a simpler way
+    mock_process = MagicMock()
+    mock_process.stdout = mock_stdout_file
+    mock_process.stderr = mock_stderr_file
+    mock_process.wait.return_value = 0
 
-            # Simulate reading from both stdout and stderr, then EOF
-            call_count = 0
+    with patch("subprocess.Popen", return_value=mock_process), patch(
+        "selectors.DefaultSelector"
+    ) as mock_selector:
 
-            def mock_select():
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    return [(mock_key_stdout, None)]
-                elif call_count == 2:
-                    return [(mock_key_stderr, None)]
-                else:
-                    return []
+        # Simplified selector setup - no need for side effects
+        mock_sel = mock_selector.return_value
+        mock_sel.get_map.return_value = {
+            mock_stdout_file: MagicMock(fileobj=mock_stdout_file),
+            mock_stderr_file: MagicMock(fileobj=mock_stderr_file),
+        }
 
-            mock_sel.select.side_effect = mock_select
+        from nscb import run_nonblocking
 
-            # First return non-empty map, then empty map
-            mock_sel.get_map.side_effect = [True, True, False]
-
-            from nscb import run_nonblocking
-
-            result = run_nonblocking("echo test")
-
-            self.assertEqual(result, 0)
+        result = run_nonblocking("echo test")
+        self.assertEqual(result, 0)
 
 
 if __name__ == "__main__":
