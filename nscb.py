@@ -5,6 +5,7 @@ import selectors
 import shlex
 import subprocess
 import sys
+import logging
 from functools import reduce
 from pathlib import Path
 from typing import Dict, List, Optional, TextIO, Tuple, cast
@@ -237,27 +238,34 @@ def build_command_string(parts: List[str]) -> str:
     return "; ".join(part for part in parts if part)
 
 
+def build_command(parts: List[str]) -> str:
+    """Build command string from parts with proper filtering."""
+    # Filter out empty strings before joining to avoid semicolon artifacts
+    return "; ".join(part for part in parts if part)
+
+
 def execute_gamescope_command(final_args: List[str]) -> None:
     """Execute gamescope command with proper handling."""
     pre_cmd, post_cmd = get_env_commands()
 
+    def build_app_command(args: List[str] | None) -> str:
+        # Always quote arguments before joining
+        quoted = [shlex.quote(arg) for arg in args or []]
+        return " ".join(quoted)
+
     if not is_gamescope_active():
-        cmd_parts = ["gamescope"] + final_args
-        full_cmd = build_command_string(
-            [pre_cmd, " ".join(shlex.quote(arg) for arg in cmd_parts), post_cmd]
-        )
+        app_args = ["gamescope"] + final_args
+        full_cmd = build_command([pre_cmd, build_app_command(app_args), post_cmd])
     else:
         try:
             dash_index = final_args.index("--")
             app_args = final_args[dash_index + 1 :]
-            full_cmd = build_command_string(
-                [pre_cmd, " ".join(shlex.quote(arg) for arg in app_args), post_cmd]
-            )
+            full_cmd = build_command([pre_cmd, build_app_command(app_args), post_cmd])
         except ValueError:
-            full_cmd = build_command_string([pre_cmd, post_cmd])
+            full_cmd = build_command([pre_cmd, post_cmd])
 
     if not full_cmd:
-        return  # Don't exit, just return
+        return
 
     print("Executing:", full_cmd)
     exit_code = run_nonblocking(full_cmd)
@@ -267,7 +275,7 @@ def execute_gamescope_command(final_args: List[str]) -> None:
 def main() -> None:
     """Main entry point."""
     if not find_executable("gamescope"):
-        print("Error: gamescope not found in PATH", file=sys.stderr)
+        logging.error("'gamescope' not found in PATH")
         sys.exit(1)
 
     profiles, args = parse_profile_args(sys.argv[1:])
@@ -277,19 +285,19 @@ def main() -> None:
     if profiles:
         config_file = find_config_file()
         if not config_file:
-            print("Error: Could not find nscb.conf", file=sys.stderr)
+            logging.error("could not find nscb.conf")
             sys.exit(1)
 
-        config = load_config(config_file)
-        for profile in profiles:
-            # Ensure this validation is done properly
-            if profile not in config:
-                print(f"Error: Profile '{profile}' not found", file=sys.stderr)
-                sys.exit(1)
-
-            merged_profiles.append(shlex.split(config[profile]))
-
-        args = merge_multiple_profiles(merged_profiles + [args])
+        try:
+            config = load_config(config_file)
+            # Load the profile arguments safely
+            merged_profiles = []
+            for profile in profiles:
+                merged_profiles.append(shlex.split(config[profile]))
+            args = merge_multiple_profiles(merged_profiles + [args])
+        except KeyError as e:
+            logging.error(f"profile {e} not found")
+            sys.exit(1)
 
     execute_gamescope_command(args)
 
