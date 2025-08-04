@@ -305,7 +305,6 @@ def main() -> None:
     # Handle help request
     if len(sys.argv) == 1 or "--help" in sys.argv:
         print_help()
-        return
 
     if not find_executable("gamescope"):
         logging.error("'gamescope' not found in PATH")

@@ -1,4 +1,4 @@
-# NeoScopebuddy
+# NeoScopebuddy [![Coverage Status](./coverage-badge.svg?dummy=8484744)]()
 
 NeoScopebuddy is a thin wrapper around the gamescope utility, just like its competitor scopebuddy, except it supports a critical extra feature: profiles!
 

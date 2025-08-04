@@ -5,16 +5,16 @@ from pathlib import Path
 from unittest.mock import mock_open, patch
 
 from nscb import (
+    execute_gamescope_command,
     find_config_file,
+    find_executable,
     get_env_commands,
     is_gamescope_active,
+    load_config,
     main,
     merge_arguments,
     merge_multiple_profiles,
     parse_profile_args,
-    load_config,
-    find_executable,
-    execute_gamescope_command,
 )
 
 
@@ -169,6 +169,7 @@ gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
         ):
             with self.assertRaises(SystemExitCalled) as cm:
                 main()
+
             self.assertEqual(cm.exception.code, 1)
             mock_log.assert_called_with("'gamescope' not found in PATH")
 
@@ -181,6 +182,7 @@ gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
         ):
             with self.assertRaises(SystemExitCalled) as cm:
                 main()
+
             self.assertEqual(cm.exception.code, 1)
             mock_log.assert_called_with("could not find nscb.conf")
 
@@ -194,6 +196,7 @@ gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
         ):
             with self.assertRaises(SystemExitCalled) as cm:
                 main()
+
             self.assertEqual(cm.exception.code, 1)
             mock_log.assert_called_with("profile 'invalid' not found")
 
@@ -247,6 +250,7 @@ gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
         ):
             with self.assertRaises(SystemExitCalled):
                 main()
+
             # Should execute just the app portion
             self.mock_run_nonblocking.assert_called_once_with("app arg1")
 
