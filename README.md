@@ -27,6 +27,12 @@ Alternatively, multiple profiles can be chained together and the last one will o
 nscb.py -p someapp -p someotherapp -- /usr/bin/someapp
 ```
 
+You can also use the syntax `--profiles=profile1,profile2` to chain multiple profiles:
+
+```bash
+nscb.py --profiles=profile1,profile2 -- /usr/bin/someapp
+```
+
 ## Direct pass-through
 
 If no profile is specified, arguments are passed through to `gamescope` as-is:
