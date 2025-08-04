@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import mock_open, patch
 
 from nscb import (
-    build_command_string,
     find_config_file,
     get_env_commands,
     is_gamescope_active,
@@ -45,6 +44,59 @@ class TestNSCBIntegration(unittest.TestCase):
     def tearDown(self):
         patch.stopall()
 
+    def test_argument_parsing_and_merging_edge_cases(self):
+        """Test argument parsing edge cases and complex merging scenarios"""
+        # Test profile argument parsing variations
+        self.assertEqual(parse_profile_args(["-p", "gaming"]), (["gaming"], []))
+        self.assertEqual(
+            parse_profile_args(["--profile=streaming"]), (["streaming"], [])
+        )
+        self.assertEqual(
+            parse_profile_args(["-p", "a", "--profile=b", "cmd"]), (["a", "b"], ["cmd"])
+        )
+
+        # Test new --profiles= syntax
+        self.assertEqual(
+            parse_profile_args(["--profiles=gaming,streaming"]),
+            (["gaming", "streaming"], []),
+        )
+        self.assertEqual(
+            parse_profile_args(["--profiles=a,b,c", "--profile=d"]),
+            (["a", "b", "c", "d"], []),
+        )
+        self.assertEqual(
+            parse_profile_args(["-p", "gaming", "--profiles=streaming,fullscreen"]),
+            (["gaming", "streaming", "fullscreen"], []),
+        )
+
+        # Test edge cases for --profiles=
+        self.assertEqual(parse_profile_args(["--profiles="]), ([], []))
+        self.assertEqual(parse_profile_args(["--profiles=a,b,"]), (["a", "b"], []))
+        self.assertEqual(parse_profile_args(["--profiles=,a,b"]), (["a", "b"], []))
+        self.assertEqual(
+            parse_profile_args(["-p", "gaming", "--profiles="]), (["gaming"], [])
+        )
+
+        # Test argument merging with conflicts
+        result = merge_arguments(["-f", "-W", "1920"], ["--borderless", "-W", "1600"])
+        self.assertIn("--borderless", result)  # newest conflict should win
+        self.assertNotIn("-f", result)  # old conflict should get dumped
+        self.assertIn("1600", result)  # override should take priority
+
+        # Test multiple profile merging
+        profiles = [["-f"], ["-W", "1920"], ["--borderless"]]
+        result = merge_multiple_profiles(profiles)
+        self.assertIn("--borderless", result)  # Last conflict wins
+        self.assertIn("-W", result)
+
+        # Test multiple profile single arg list merging
+        result = merge_multiple_profiles([["-f", "-W", "1920"]])
+        self.assertEqual(result, ["-f", "-W", "1920"])
+
+        # Test empty profile merging
+        result = merge_multiple_profiles([])
+        self.assertEqual(result, [])
+
     def test_main_complete_workflow_with_profiles(self):
         """Test complete main workflow with multiple profiles and argument merging"""
         config_data = """
@@ -52,7 +104,7 @@ class TestNSCBIntegration(unittest.TestCase):
 gaming=-f -W 1920 -H 1080
 streaming=--borderless -W 1280 -H 720
 """
-        cmd = "nscb -p gaming -p streaming -W 1600 -- app".split(" ")
+        cmd = "nscb --profiles=gaming,streaming -W 1600 -- app".split(" ")
         with (
             patch("nscb.is_gamescope_active", return_value=False),
             patch("nscb.find_config_file", return_value=Path("/fake/config")),
@@ -72,6 +124,41 @@ streaming=--borderless -W 1280 -H 720
             self.assertIn("-W 1600", called_cmd)  # Override should win
             self.assertIn("app", called_cmd)
 
+    def test_main_complete_workflow_with_dimension_override(self):
+        """Test main workflow where dimension overrides are applied to a profile"""
+        config_data = """
+# Config file with profiles
+gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
+"""
+        cmd = "nscb --profiles=gamingold -w 1600 -h 900 app".split(" ")
+        with (
+            patch("nscb.is_gamescope_active", return_value=False),
+            patch("nscb.find_config_file", return_value=Path("/fake/config")),
+            patch("builtins.open", new_callable=mock_open, read_data=config_data),
+            patch("sys.argv", cmd),
+            patch("nscb.find_executable", return_value=True),
+        ):
+            with self.assertRaises(SystemExitCalled) as cm:
+                main()
+
+            # Verify the exit code
+            self.assertEqual(cm.exception.code, 0)
+
+            # Verify the merged command includes profile args with overrides
+            called_cmd = self.mock_run_nonblocking.call_args[0][0]
+            self.assertIn("gamescope", called_cmd)
+            self.assertIn("-w 1600", called_cmd)  # Override for width wins
+            self.assertIn("-h 900", called_cmd)  # Override for height wins
+            self.assertNotIn("-w 1920", called_cmd)  # Old width should be replaced
+            self.assertNotIn("-h 1080", called_cmd)  # Old height should be replaced
+            self.assertIn(
+                "-W 1920", called_cmd
+            )  # Profile value remains (not overridden)
+            self.assertIn(
+                "-H 1080", called_cmd
+            )  # Profile value remains (not overridden)
+            self.assertIn("app", called_cmd)
+
     def test_main_error_scenarios(self):
         """Test main function error handling scenarios"""
         # Test missing gamescope executable - this should exit before execute_gamescope_command
@@ -89,7 +176,7 @@ streaming=--borderless -W 1280 -H 720
         with (
             patch("nscb.find_executable", return_value=True),
             patch("nscb.find_config_file", return_value=None),
-            patch("sys.argv", ["nscb", "-p", "gaming"]),
+            patch("sys.argv", ["nscb", "--profiles=gaming"]),
             patch("logging.error") as mock_log,
         ):
             with self.assertRaises(SystemExitCalled) as cm:
@@ -102,7 +189,7 @@ streaming=--borderless -W 1280 -H 720
             patch("nscb.find_executable", return_value=True),
             patch("nscb.find_config_file", return_value=Path("/fake/config")),
             patch("builtins.open", new_callable=mock_open, read_data="gaming=-f"),
-            patch("sys.argv", ["nscb", "-p", "invalid"]),
+            patch("sys.argv", ["nscb", "--profiles=invalid"]),
             patch("logging.error") as mock_log,
         ):
             with self.assertRaises(SystemExitCalled) as cm:
@@ -145,14 +232,14 @@ streaming=--borderless -W 1280 -H 720
 
     def test_gamescope_active_execution_workflow(self):
         """Test execution when gamescope is already active"""
-        cmd = "nscb -p profile -- app arg1".split(" ")
+        cmd = "nscb --profiles=profile1,profile2 -- app arg1".split(" ")
         with (
             patch("nscb.is_gamescope_active", return_value=True),
             patch("nscb.find_config_file", return_value=Path("/config")),
             patch(
                 "builtins.open",
                 new_callable=mock_open,
-                read_data="profile=-f -W 1920 -H 1080",
+                read_data="profile1=-f -W 1920\nprofile2=--borderless -H 720",
             ),
             patch("sys.argv", cmd),
             patch("nscb.find_executable", return_value=True),
@@ -214,37 +301,6 @@ streaming=--borderless -W 1280 -H 720
         ):
             result = find_config_file()
             self.assertIsNone(result)
-
-    def test_argument_parsing_and_merging_edge_cases(self):
-        """Test argument parsing edge cases and complex merging scenarios"""
-        # Test profile argument parsing variations
-        self.assertEqual(parse_profile_args(["-p", "gaming"]), (["gaming"], []))
-        self.assertEqual(
-            parse_profile_args(["--profile=streaming"]), (["streaming"], [])
-        )
-        self.assertEqual(
-            parse_profile_args(["-p", "a", "--profile=b", "cmd"]), (["a", "b"], ["cmd"])
-        )
-
-        # Test argument merging with conflicts
-        result = merge_arguments(["-f", "-W", "1920"], ["--borderless", "-W", "1600"])
-        self.assertIn("--borderless", result)  # newest conflict should win
-        self.assertNotIn("-f", result)  # old conflict should get dumped
-        self.assertIn("1600", result)  # override should take priority
-
-        # Test multiple profile merging
-        profiles = [["-f"], ["-W", "1920"], ["--borderless"]]
-        result = merge_multiple_profiles(profiles)
-        self.assertIn("--borderless", result)  # Last conflict wins
-        self.assertIn("-W", result)
-
-        # Test multiple profile single arg list merging
-        result = merge_multiple_profiles([["-f", "-W", "1920"]])
-        self.assertEqual(result, ["-f", "-W", "1920"])
-
-        # Test empty profile merging
-        result = merge_multiple_profiles([])
-        self.assertEqual(result, [])
 
     def test_executable_discovery_and_path_handling(self):
         """Test executable discovery in PATH"""

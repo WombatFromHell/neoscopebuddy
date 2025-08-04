@@ -11,6 +11,21 @@ from pathlib import Path
 from typing import Dict, List, Optional, TextIO, Tuple, cast
 
 
+def print_help():
+    """Print concise help message about nscb.py functionality."""
+    help_text = """neoscopebuddy - gamescope wrapper
+Usage:
+  nscb.py -p fullscreen -- /bin/mygame                 # Single profile
+  nscb.py --profiles=profile1,profile2 -- /bin/mygame  # Multiple profiles
+  nscb.py -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
+
+  Config file: $XDG_CONFIG_HOME/nscb.conf or $HOME/.config/nscb.conf
+  Config format: KEY=VALUE (e.g., "fullscreen=-f")
+  Supports NSCB_PRE_CMD=.../NSCB_POST_CMD=... environment hooks
+"""
+    print(help_text)
+
+
 def run_nonblocking(cmd: str) -> int:
     """Execute command with non-blocking I/O, forwarding stdout/stderr in real-time."""
     process = subprocess.Popen(
@@ -77,21 +92,34 @@ def parse_profile_args(args: List[str]) -> Tuple[List[str], List[str]]:
     profiles, rest = [], []
     i = 0
     while i < len(args):
-        if (arg := args[i]) in ("-p", "--profile"):
+        arg = args[i]
+        # Handle --profiles=profile1,profile2,...
+        if arg.startswith("--profiles="):
+            profile_list = arg[len("--profiles=") :].split(",")
+            for p in profile_list:
+                if p.strip():
+                    profiles.append(p.strip())
+            i += 1
+            continue
+        # Handle -p and --profile (existing logic)
+        if arg in ("-p", "--profile"):
             if i + 1 >= len(args):
                 raise ValueError(f"{arg} requires value")
             profiles.append(args[i + 1])
             i += 2
+            continue
         elif arg.startswith("--profile="):
-            profiles.append(arg.split("=", 1)[1])
+            profile_name = arg.split("=", 1)[1]
+            profiles.append(profile_name)
             i += 1
-        else:
-            rest.append(arg)
-            i += 1
+            continue
+
+        rest.append(arg)
+        i += 1
     return profiles, rest
 
 
-def _split_at_separator(args: List[str]) -> Tuple[List[str], List[str]]:
+def split_at_separator(args: List[str]) -> Tuple[List[str], List[str]]:
     """Split arguments at '--' separator."""
     if "--" in args:
         idx = args.index("--")
@@ -99,7 +127,7 @@ def _split_at_separator(args: List[str]) -> Tuple[List[str], List[str]]:
     return args, []
 
 
-def _separate_flags_and_positionals(
+def separate_flags_and_positionals(
     args: List[str],
 ) -> Tuple[List[Tuple[str, Optional[str]]], List[str]]:
     """Separate flag/value pairs from positional arguments."""
@@ -113,7 +141,7 @@ def _separate_flags_and_positionals(
             continue
 
         if (
-            (arg in ("-W", "-H", "-O", "-o"))
+            (arg in ("-W", "-H", "-w", "-h"))
             and i + 1 < len(args)
             and not args[i + 1].startswith("-")
         ):
@@ -128,12 +156,12 @@ def _separate_flags_and_positionals(
 def merge_arguments(profile_args: List[str], override_args: List[str]) -> List[str]:
     """Merge profile arguments with overrides."""
     (p_before, _), (o_before, o_after) = (
-        _split_at_separator(profile_args),
-        _split_at_separator(override_args),
+        split_at_separator(profile_args),
+        split_at_separator(override_args),
     )
 
-    p_flags, p_pos = _separate_flags_and_positionals(p_before)
-    o_flags, o_pos = _separate_flags_and_positionals(o_before)
+    p_flags, p_pos = separate_flags_and_positionals(p_before)
+    o_flags, o_pos = separate_flags_and_positionals(o_before)
 
     # Define mutually exclusive flags
     conflict_set = {"-f", "--fullscreen", "-b", "--borderless"}
@@ -274,6 +302,11 @@ def execute_gamescope_command(final_args: List[str]) -> None:
 
 def main() -> None:
     """Main entry point."""
+    # Handle help request
+    if len(sys.argv) == 1 or "--help" in sys.argv:
+        print_help()
+        return
+
     if not find_executable("gamescope"):
         logging.error("'gamescope' not found in PATH")
         sys.exit(1)
