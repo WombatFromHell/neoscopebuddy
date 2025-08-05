@@ -32,7 +32,7 @@ class TestNSCBIntegration(unittest.TestCase):
             "nscb.run_nonblocking", return_value=0
         ).start()
         self.mock_build = patch(
-            "nscb.build_command_string", side_effect=lambda x: "; ".join(x)
+            "nscb.build_command", side_effect=lambda x: "; ".join(x)
         ).start()
         self.mock_print = patch("builtins.print").start()
         # Make sys.exit actually stop execution by raising an exception
