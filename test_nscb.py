@@ -14,6 +14,7 @@ from nscb import (
     main,
     merge_arguments,
     merge_multiple_profiles,
+    separate_flags_and_positionals,
     parse_profile_args,
 )
 
@@ -364,6 +365,38 @@ streaming="--borderless -W 1280"
 
         with self.assertRaises(ValueError):
             parse_profile_args(["--profile"])  # Missing value
+
+    def test_separate_flags_and_positionals_retains_short_flags(self) -> None:
+        """Flags should be returned exactly as supplied (no expansion)."""
+        flags, positionals = separate_flags_and_positionals(["-W", "1920", "--nested"])
+        self.assertEqual(flags, [("-W", "1920"), ("--nested", None)])
+        self.assertEqual(positionals, [])
+
+    def test_merge_arguments_override_ordering(self) -> None:
+        """Override flags are appended after profile flags."""
+        result = merge_arguments(["-f", "--force-grab-cursor"], ["--mangoapp"])
+        # Order: profile flags first, then the override
+        self.assertEqual(result, ["-f", "--force-grab-cursor", "--mangoapp"])
+
+    def test_merge_arguments_conflict_override_removal(self) -> None:
+        """A different conflict flag in the override removes the profile’s conflict."""
+        result = merge_arguments(["-f", "-W", "1920"], ["--borderless"])
+        self.assertNotIn("-f", result)
+        self.assertIn("--borderless", result)
+        self.assertIn("-W", result)
+
+    def test_merge_arguments_complex_override(self) -> None:
+        """Conflict and non‑conflict overrides are merged correctly."""
+        # Profile:   -f (conflict), -W 1920
+        # Override:  --borderless (conflict), -H 1080 (new non‑conflict)
+        result = merge_arguments(["-f", "-W", "1920"], ["--borderless", "-H", "1080"])
+        self.assertEqual(result, ["--borderless", "-W", "1920", "-H", "1080"])
+
+    def test_merge_arguments_short_flag_retention(self) -> None:
+        """Short flags are preserved unchanged in the final command."""
+        result = merge_arguments(["-f"], ["--mangoapp"])
+        self.assertIn("-f", result)
+        self.assertNotIn("--fullscreen", result)  # no expansion
 
 
 if __name__ == "__main__":
