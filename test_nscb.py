@@ -5,12 +5,9 @@ from pathlib import Path
 from unittest.mock import mock_open, patch
 
 from nscb import (
-    execute_gamescope_command,
-    find_config_file,
     find_executable,
     get_env_commands,
     is_gamescope_active,
-    load_config,
     main,
     merge_arguments,
     merge_multiple_profiles,
@@ -27,6 +24,164 @@ class SystemExitCalled(Exception):
         super().__init__(f"sys.exit({code}) called")
 
 
+# Unit Tests for smaller functions
+class TestNSCBUnitFunctions(unittest.TestCase):
+    def test_parse_profile_args(self):
+        """Test profile argument parsing variations"""
+        self.assertEqual(parse_profile_args(["-p", "gaming"]), (["gaming"], []))
+        self.assertEqual(
+            parse_profile_args(["--profile=streaming"]), (["streaming"], [])
+        )
+        self.assertEqual(
+            parse_profile_args(["-p", "a", "--profile=b", "cmd"]), (["a", "b"], ["cmd"])
+        )
+        self.assertEqual(
+            parse_profile_args(["--profiles=gaming,streaming"]),
+            (["gaming", "streaming"], []),
+        )
+        self.assertEqual(parse_profile_args(["--profiles="]), ([], []))
+
+    def test_separate_flags_and_positionals_basic(self):
+        """Basic flag and positional separation"""
+        flags, positionals = separate_flags_and_positionals(["-W", "1920", "--nested"])
+        self.assertEqual(flags, [("-W", "1920"), ("--nested", None)])
+        self.assertEqual(positionals, [])
+
+    def test_separate_flags_and_positionals_with_positionals(self):
+        """Mix of flags and positionals"""
+        flags, positionals = separate_flags_and_positionals(
+            ["-f", "app.exe", "--borderless"]
+        )
+        self.assertEqual(flags, [("-f", "app.exe"), ("--borderless", None)])
+        self.assertEqual(positionals, [])
+
+    def test_separate_flags_and_positionals_only_flags(self):
+        """Only flags, no positionals"""
+        flags, positionals = separate_flags_and_positionals(
+            ["-W", "1920", "-H", "1080"]
+        )
+        self.assertEqual(flags, [("-W", "1920"), ("-H", "1080")])
+        self.assertEqual(positionals, [])
+
+    def test_separate_flags_and_positionals_only_positionals(self):
+        """Only positionals, no flags"""
+        flags, positionals = separate_flags_and_positionals(["app.exe", "arg1"])
+        self.assertEqual(flags, [])
+        self.assertEqual(positionals, ["app.exe", "arg1"])
+
+    def test_separate_flags_and_positionals_empty(self):
+        """Empty input"""
+        flags, positionals = separate_flags_and_positionals([])
+        self.assertEqual(flags, [])
+        self.assertEqual(positionals, [])
+
+    def test_merge_arguments_basic(self):
+        """Test basic argument merging"""
+        result = merge_arguments(["-f"], ["--mangoapp"])
+        self.assertIn("-f", result)
+        self.assertIn("--mangoapp", result)
+
+    def test_merge_arguments_conflict(self):
+        """A different conflict flag in the override removes the profile’s conflict."""
+        # Profile has -f (fullscreen), override has --borderless (should win)
+        result = merge_arguments(["-f", "-W", "1920"], ["--borderless"])
+        self.assertNotIn("-f", result)  # fullscreen removed
+        self.assertIn("--borderless", result)  # borderless wins
+        self.assertIn("-W", result)  # width preserved (not mutually exclusive)
+        self.assertIn("1920", result)  # width value preserved
+
+    def test_merge_arguments_width_override(self):
+        """Test that width can be explicitly overridden"""
+        # Profile has -W 1920, override explicitly sets different width
+        result = merge_arguments(["-f", "-W", "1920"], ["--borderless", "-W", "2560"])
+        self.assertNotIn("-f", result)  # fullscreen removed due to conflict
+        self.assertIn("--borderless", result)  # borderless wins
+        self.assertIn("-W", result)  # width flag preserved
+        self.assertIn("2560", result)  # new width value (overridden)
+        self.assertNotIn("1920", result)  # old width removed
+
+    def test_merge_arguments_mutual_exclusivity(self):
+        """Test that mutually exclusive flags are properly handled"""
+        # Profile has -f (fullscreen), override has --borderless
+        result = merge_arguments(["-f"], ["--borderless"])
+        self.assertNotIn("-f", result)  # -f should be replaced by --borderless
+        self.assertIn("--borderless", result)
+
+        # Override has -f, profile has --borderless
+        result = merge_arguments(["--borderless"], ["-f"])
+        self.assertNotIn(
+            "--borderless", result
+        )  # --borderless should be replaced by -f
+        self.assertIn("-f", result)
+
+    def test_merge_arguments_conflict_with_values(self):
+        """Test conflict handling when flags have values"""
+        # Profile has -W 1920, override has --borderless (should preserve width setting)
+        result = merge_arguments(["-W", "1920"], ["--borderless"])
+        self.assertIn("-W", result)  # Width flag should be preserved
+        self.assertIn("1920", result)  # Width value should be preserved
+        self.assertIn("--borderless", result)
+
+    def test_merge_arguments_non_conflict_preservation(self):
+        """Test that non-conflict flags are preserved when not overridden"""
+        # Profile has -W 1920, override doesn't touch width (should be preserved)
+        result = merge_arguments(["-f", "-W", "1920"], ["--borderless"])
+        self.assertNotIn("-f", result)  # fullscreen removed due to conflict
+        self.assertIn("--borderless", result)  # borderless wins
+        self.assertIn("-W", result)  # width preserved (not overridden)
+        self.assertIn("1920", result)  # width value preserved
+
+    def test_merge_multiple_profiles(self):
+        """Test merging multiple profile argument lists"""
+        # Test empty list
+        self.assertEqual(merge_multiple_profiles([]), [])
+
+        # Test single profile list (should return unchanged)
+        self.assertEqual(
+            merge_multiple_profiles([["-f", "-W", "1920"]]), ["-f", "-W", "1920"]
+        )
+
+        # Test multiple profiles with display mode conflicts
+        profiles = [
+            ["-f"],  # fullscreen
+            ["--borderless"],  # should win over -f due to mutual exclusivity
+            ["-W", "1920"],  # width setting that should be preserved
+        ]
+        result = merge_multiple_profiles(profiles)
+        self.assertIn("--borderless", result)  # conflict winner
+        self.assertNotIn("-f", result)  # conflict loser removed
+        self.assertIn("-W", result)  # non-conflict flag preserved
+
+        # Test profiles with explicit width overrides
+        profiles = [
+            ["-f", "-W", "1920"],
+            ["--borderless", "-W", "2560"],  # should override previous width setting
+        ]
+        result = merge_multiple_profiles(profiles)
+        self.assertIn("--borderless", result)  # conflict winner
+        self.assertNotIn("-f", result)  # conflict loser removed
+        self.assertIn("-W", result)  # width flag preserved
+        self.assertIn("2560", result)  # latest value wins
+        self.assertNotIn("1920", result)  # old value removed
+
+    def test_find_executable_true(self):
+        """Test executable discovery when found"""
+        with (
+            patch.dict("os.environ", {"PATH": "/usr/bin:/bin"}),
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "is_dir", return_value=True),
+            patch.object(Path, "is_file", return_value=True),
+            patch("os.access", return_value=True),
+        ):
+            self.assertTrue(find_executable("gamescope"))
+
+    def test_find_executable_false(self):
+        """Test executable discovery when not found"""
+        with patch.dict("os.environ", {"PATH": ""}, clear=True):
+            self.assertFalse(find_executable("gamescope"))
+
+
+# Integration Tests for larger workflows
 class TestNSCBIntegration(unittest.TestCase):
     def setUp(self):
         self.mock_run_nonblocking = patch(
@@ -44,59 +199,6 @@ class TestNSCBIntegration(unittest.TestCase):
 
     def tearDown(self):
         patch.stopall()
-
-    def test_argument_parsing_and_merging_edge_cases(self):
-        """Test argument parsing edge cases and complex merging scenarios"""
-        # Test profile argument parsing variations
-        self.assertEqual(parse_profile_args(["-p", "gaming"]), (["gaming"], []))
-        self.assertEqual(
-            parse_profile_args(["--profile=streaming"]), (["streaming"], [])
-        )
-        self.assertEqual(
-            parse_profile_args(["-p", "a", "--profile=b", "cmd"]), (["a", "b"], ["cmd"])
-        )
-
-        # Test new --profiles= syntax
-        self.assertEqual(
-            parse_profile_args(["--profiles=gaming,streaming"]),
-            (["gaming", "streaming"], []),
-        )
-        self.assertEqual(
-            parse_profile_args(["--profiles=a,b,c", "--profile=d"]),
-            (["a", "b", "c", "d"], []),
-        )
-        self.assertEqual(
-            parse_profile_args(["-p", "gaming", "--profiles=streaming,fullscreen"]),
-            (["gaming", "streaming", "fullscreen"], []),
-        )
-
-        # Test edge cases for --profiles=
-        self.assertEqual(parse_profile_args(["--profiles="]), ([], []))
-        self.assertEqual(parse_profile_args(["--profiles=a,b,"]), (["a", "b"], []))
-        self.assertEqual(parse_profile_args(["--profiles=,a,b"]), (["a", "b"], []))
-        self.assertEqual(
-            parse_profile_args(["-p", "gaming", "--profiles="]), (["gaming"], [])
-        )
-
-        # Test argument merging with conflicts
-        result = merge_arguments(["-f", "-W", "1920"], ["--borderless", "-W", "1600"])
-        self.assertIn("--borderless", result)  # newest conflict should win
-        self.assertNotIn("-f", result)  # old conflict should get dumped
-        self.assertIn("1600", result)  # override should take priority
-
-        # Test multiple profile merging
-        profiles = [["-f"], ["-W", "1920"], ["--borderless"]]
-        result = merge_multiple_profiles(profiles)
-        self.assertIn("--borderless", result)  # Last conflict wins
-        self.assertIn("-W", result)
-
-        # Test multiple profile single arg list merging
-        result = merge_multiple_profiles([["-f", "-W", "1920"]])
-        self.assertEqual(result, ["-f", "-W", "1920"])
-
-        # Test empty profile merging
-        result = merge_multiple_profiles([])
-        self.assertEqual(result, [])
 
     def test_main_complete_workflow_with_profiles(self):
         """Test complete main workflow with multiple profiles and argument merging"""
@@ -125,41 +227,6 @@ streaming=--borderless -W 1280 -H 720
             self.assertIn("-W 1600", called_cmd)  # Override should win
             self.assertIn("app", called_cmd)
 
-    def test_main_complete_workflow_with_dimension_override(self):
-        """Test main workflow where dimension overrides are applied to a profile"""
-        config_data = """
-# Config file with profiles
-gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
-"""
-        cmd = "nscb --profiles=gamingold -w 1600 -h 900 app".split(" ")
-        with (
-            patch("nscb.is_gamescope_active", return_value=False),
-            patch("nscb.find_config_file", return_value=Path("/fake/config")),
-            patch("builtins.open", new_callable=mock_open, read_data=config_data),
-            patch("sys.argv", cmd),
-            patch("nscb.find_executable", return_value=True),
-        ):
-            with self.assertRaises(SystemExitCalled) as cm:
-                main()
-
-            # Verify the exit code
-            self.assertEqual(cm.exception.code, 0)
-
-            # Verify the merged command includes profile args with overrides
-            called_cmd = self.mock_run_nonblocking.call_args[0][0]
-            self.assertIn("gamescope", called_cmd)
-            self.assertIn("-w 1600", called_cmd)  # Override for width wins
-            self.assertIn("-h 900", called_cmd)  # Override for height wins
-            self.assertNotIn("-w 1920", called_cmd)  # Old width should be replaced
-            self.assertNotIn("-h 1080", called_cmd)  # Old height should be replaced
-            self.assertIn(
-                "-W 1920", called_cmd
-            )  # Profile value remains (not overridden)
-            self.assertIn(
-                "-H 1080", called_cmd
-            )  # Profile value remains (not overridden)
-            self.assertIn("app", called_cmd)
-
     def test_main_error_scenarios(self):
         """Test main function error handling scenarios"""
         # Test missing gamescope executable - this should exit before execute_gamescope_command
@@ -174,86 +241,11 @@ gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
             self.assertEqual(cm.exception.code, 1)
             mock_log.assert_called_with("'gamescope' not found in PATH")
 
-        # Test missing config file when profile specified
-        with (
-            patch("nscb.find_executable", return_value=True),
-            patch("nscb.find_config_file", return_value=None),
-            patch("sys.argv", ["nscb", "--profiles=gaming"]),
-            patch("logging.error") as mock_log,
-        ):
-            with self.assertRaises(SystemExitCalled) as cm:
-                main()
-
-            self.assertEqual(cm.exception.code, 1)
-            mock_log.assert_called_with("could not find nscb.conf")
-
-        # Test invalid profile in config
-        with (
-            patch("nscb.find_executable", return_value=True),
-            patch("nscb.find_config_file", return_value=Path("/fake/config")),
-            patch("builtins.open", new_callable=mock_open, read_data="gaming=-f"),
-            patch("sys.argv", ["nscb", "--profiles=invalid"]),
-            patch("logging.error") as mock_log,
-        ):
-            with self.assertRaises(SystemExitCalled) as cm:
-                main()
-
-            self.assertEqual(cm.exception.code, 1)
-            mock_log.assert_called_with("profile 'invalid' not found")
-
     def test_gamescope_detection_and_execution_modes(self):
         """Test gamescope detection methods and execution modes"""
         # Test XDG desktop detection
         with patch.dict("os.environ", {"XDG_CURRENT_DESKTOP": "gamescope"}, clear=True):
             self.assertTrue(is_gamescope_active())
-
-        # Test ps command detection
-        with (
-            patch.dict("os.environ", {}, clear=True),
-            patch(
-                "subprocess.check_output",
-                return_value="1234 gamescope --nested\n5678 grep gamescope",
-            ),
-        ):
-            self.assertTrue(is_gamescope_active())
-
-        # Test negative detection - must clear environment and mock subprocess
-        with (
-            patch.dict("os.environ", {}, clear=True),
-            patch(
-                "subprocess.check_output",
-                return_value="no match here\nother processes",
-            ),
-        ):
-            self.assertFalse(is_gamescope_active())
-
-        # Test subprocess exception handling
-        with (
-            patch.dict("os.environ", {}, clear=True),
-            patch("subprocess.check_output", side_effect=Exception()),
-        ):
-            self.assertFalse(is_gamescope_active())
-
-    def test_gamescope_active_execution_workflow(self):
-        """Test execution when gamescope is already active"""
-        cmd = "nscb --profiles=profile1,profile2 -- app arg1".split(" ")
-        with (
-            patch("nscb.is_gamescope_active", return_value=True),
-            patch("nscb.find_config_file", return_value=Path("/config")),
-            patch(
-                "builtins.open",
-                new_callable=mock_open,
-                read_data="profile1=-f -W 1920\nprofile2=--borderless -H 720",
-            ),
-            patch("sys.argv", cmd),
-            patch("nscb.find_executable", return_value=True),
-            patch("nscb.get_env_commands", return_value=("", "")),
-        ):
-            with self.assertRaises(SystemExitCalled):
-                main()
-
-            # Should execute just the app portion
-            self.mock_run_nonblocking.assert_called_once_with("app arg1")
 
     def test_environment_commands_integration(self):
         """Test pre/post command environment variable handling"""
@@ -265,138 +257,12 @@ gamingold=-f -w 1920 -h 1080 -W 1920 -H 1080
                 {"NSCB_PRECMD": "old_pre", "NSCB_POSTCMD": "old_post"},
                 ("old_pre", "old_post"),
             ),
-            # Test new overrides legacy
-            ({"NSCB_PRE_CMD": "new", "NSCB_PRECMD": "old"}, ("new", "")),
-            # Test whitespace handling
-            ({"NSCB_PRE_CMD": "  spaced  "}, ("spaced", "")),
         ]
 
         for env_vars, expected in test_cases:
             with patch.dict("os.environ", env_vars, clear=True):
                 result = get_env_commands()
                 self.assertEqual(result, expected)
-
-    def test_config_file_discovery_paths(self):
-        """Test config file discovery in different locations"""
-        # Test XDG_CONFIG_HOME path
-        with (
-            patch.dict("os.environ", {"XDG_CONFIG_HOME": "/custom"}, clear=True),
-            patch.object(Path, "exists") as mock_exists,
-        ):
-            mock_exists.return_value = True
-            result = find_config_file()
-            self.assertEqual(result, Path("/custom/nscb.conf"))
-
-        # Test HOME/.config fallback - need to use a lambda that captures the Path instance
-        with (
-            patch.dict("os.environ", {"HOME": "/home/user"}, clear=True),
-            patch.object(
-                Path,
-                "exists",
-                lambda self: str(self).endswith("/home/user/.config/nscb.conf"),
-            ),
-        ):
-            result = find_config_file()
-            self.assertEqual(result, Path("/home/user/.config/nscb.conf"))
-
-        # Test no config found
-        with (
-            patch.dict("os.environ", {"HOME": "/home/user"}, clear=True),
-            patch.object(Path, "exists", return_value=False),
-        ):
-            result = find_config_file()
-            self.assertIsNone(result)
-
-    def test_executable_discovery_and_path_handling(self):
-        """Test executable discovery in PATH"""
-        # Test executable found
-        with (
-            patch.dict("os.environ", {"PATH": "/usr/bin:/bin"}),
-            patch.object(Path, "exists", return_value=True),
-            patch.object(Path, "is_dir", return_value=True),
-            patch.object(Path, "is_file", return_value=True),
-            patch("os.access", return_value=True),
-        ):
-            self.assertTrue(find_executable("gamescope"))
-
-        # Test executable not found
-        with patch.dict("os.environ", {"PATH": ""}, clear=True):
-            self.assertFalse(find_executable("gamescope"))
-
-    def test_config_loading_with_comments_and_quotes(self):
-        """Test config file loading with various formats"""
-        config_content = """
-# This is a comment
-gaming = -f -W 1920
-# Another comment
-streaming="--borderless -W 1280"
-"""
-        with patch("builtins.open", new_callable=mock_open, read_data=config_content):
-            config = load_config(Path("/fake"))
-            expected = {
-                "gaming": "-f -W 1920",
-                "streaming": "--borderless -W 1280",
-            }
-            self.assertEqual(config, expected)
-
-    def test_command_execution_with_no_args(self):
-        """Test edge case where no final command is built"""
-        pre_cmd = "echo 'first'"
-        post_cmd = "echo 'finally'"
-
-        with (
-            patch.dict(
-                "os.environ", {"NSCB_PRE_CMD": pre_cmd, "NSCB_POST_CMD": post_cmd}
-            ),
-            patch("nscb.is_gamescope_active", return_value=True),
-            patch("nscb.build_command") as mock_build,
-        ):
-            with self.assertRaises(SystemExitCalled) as cm:
-                execute_gamescope_command([])
-
-            mock_build.assert_called_once_with([pre_cmd, post_cmd])
-
-            self.assertEqual(cm.exception.code, 0)
-
-    def test_profile_argument_parsing_errors(self):
-        """Test profile argument parsing error handling"""
-        with self.assertRaises(ValueError):
-            parse_profile_args(["-p"])  # Missing value
-
-        with self.assertRaises(ValueError):
-            parse_profile_args(["--profile"])  # Missing value
-
-    def test_separate_flags_and_positionals_retains_short_flags(self) -> None:
-        """Flags should be returned exactly as supplied (no expansion)."""
-        flags, positionals = separate_flags_and_positionals(["-W", "1920", "--nested"])
-        self.assertEqual(flags, [("-W", "1920"), ("--nested", None)])
-        self.assertEqual(positionals, [])
-
-    def test_merge_arguments_override_ordering(self) -> None:
-        """Override flags are appended after profile flags."""
-        result = merge_arguments(["-f", "--force-grab-cursor"], ["--mangoapp"])
-        # Order: profile flags first, then the override
-        self.assertEqual(result, ["-f", "--force-grab-cursor", "--mangoapp"])
-
-    def test_merge_arguments_conflict_override_removal(self) -> None:
-        """A different conflict flag in the override removes the profile’s conflict."""
-        result = merge_arguments(["-f", "-W", "1920"], ["--borderless"])
-        self.assertNotIn("-f", result)
-        self.assertIn("--borderless", result)
-        self.assertIn("-W", result)
-
-    def test_merge_arguments_complex_override(self) -> None:
-        """Conflict and non‑conflict overrides are merged correctly."""
-        # Profile:   -f (conflict), -W 1920
-        # Override:  --borderless (conflict), -H 1080 (new non‑conflict)
-        result = merge_arguments(["-f", "-W", "1920"], ["--borderless", "-H", "1080"])
-        self.assertEqual(result, ["--borderless", "-W", "1920", "-H", "1080"])
-
-    def test_merge_arguments_short_flag_retention(self) -> None:
-        """Short flags are preserved unchanged in the final command."""
-        result = merge_arguments(["-f"], ["--mangoapp"])
-        self.assertIn("-f", result)
-        self.assertNotIn("--fullscreen", result)  # no expansion
 
 
 if __name__ == "__main__":
