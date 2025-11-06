@@ -7,8 +7,8 @@ from conftest import SystemExitCalled
 parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 from nscb import (  # noqa: E402
-    get_env_commands,
-    is_gamescope_active,
+    CommandExecutor,
+    SystemDetector,
     main,
 )
 
@@ -38,69 +38,59 @@ streaming=--borderless -W 1280 -H 720
         cmd = "nscb --profiles=gaming,streaming -W 1600 -- app".split(" ")
 
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch("sys.argv", cmd)
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
 
-        with pytest.raises(SystemExitCalled) as cm:
-            main()
-
-        assert cm.value.code == 0
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         called_cmd = mock_integration_setup["run_nonblocking"].call_args[0][0]
         assert "gamescope" in called_cmd
         assert "-W 1600" in called_cmd
         assert "app" in called_cmd
 
-    def test_main_error_scenarios(self, mock_system_exit, mocker):
+    def test_main_error_scenarios(self, mocker):
         # Test missing gamescope executable
-        mocker.patch("nscb.find_executable", return_value=False)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=False)
         mock_log = mocker.patch("logging.error")
-        mocker.patch("sys.argv", ["nscb"])
+        mocker.patch(
+            "sys.argv", ["nscb", "-p", "gaming"]
+        )  # Provide a profile to avoid help
 
-        with pytest.raises(SystemExitCalled) as cm:
-            main()
-
-        assert cm.value.code == 1
+        result = main()
+        assert result == 1
         mock_log.assert_called_with("'gamescope' not found in PATH")
 
-    def test_main_error_missing_gamescope(self, mock_system_exit, mocker):
-        mocker.patch("nscb.find_executable", return_value=False)
+    def test_main_error_missing_gamescope(self, mocker):
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=False)
         mock_log = mocker.patch("logging.error")
         mocker.patch("sys.argv", ["nscb", "-p", "gaming"])
 
-        with pytest.raises(SystemExitCalled) as cm:
-            main()
-
-        assert cm.value.code == 1
+        result = main()
+        assert result == 1
         mock_log.assert_called_with("'gamescope' not found in PATH")
 
-    def test_main_error_missing_config(self, mock_system_exit, mocker):
-        mocker.patch("nscb.find_executable", return_value=True)
-        mocker.patch("nscb.find_config_file", return_value=None)
+    def test_main_error_missing_config(self, mocker):
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
+        mocker.patch("nscb.ConfigManager.find_config_file", return_value=None)
         mock_log = mocker.patch("logging.error")
         mocker.patch("sys.argv", ["nscb", "-p", "gaming"])
 
-        with pytest.raises(SystemExitCalled) as cm:
-            main()
-
-        assert cm.value.code == 1
+        result = main()
+        assert result == 1
         mock_log.assert_called_with("could not find nscb.conf")
 
-    def test_main_error_missing_profiles(
-        self, mock_system_exit, mocker, mock_config_file
-    ):
+    def test_main_error_missing_profiles(self, mocker, mock_config_file):
         config_data = "existing=-f -W 1920 -H 1080\n"
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
         mock_log = mocker.patch("logging.error")
         mocker.patch("sys.argv", ["nscb", "-p", "nonexistent"])
 
-        with pytest.raises(SystemExitCalled) as cm:
-            main()
-
-        assert cm.value.code == 1
+        result = main()
+        assert result == 1
         mock_log.assert_called_with("profile nonexistent not found")
 
     @pytest.mark.parametrize(
@@ -115,7 +105,6 @@ streaming=--borderless -W 1280 -H 720
     def test_main_different_arg_combinations(
         self,
         mock_integration_setup,
-        mock_system_exit,
         mocker,
         mock_config_file,
         cmd_args,
@@ -125,13 +114,13 @@ streaming=--borderless -W 1280 -H 720
             "gaming=-f -W 1920 -H 1080\nstreaming=--borderless -W 1280 -H 720\n"
         )
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch("sys.argv", cmd_args)
 
-        with pytest.raises(SystemExitCalled):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         called_cmd = mock_integration_setup["run_nonblocking"].call_args[0][0]
         assert "gamescope" in called_cmd
@@ -140,7 +129,7 @@ streaming=--borderless -W 1280 -H 720
             assert flag in called_cmd
 
     def test_main_profile_loading_real_workflow(
-        self, mock_integration_setup, mock_system_exit, mocker, mock_config_file
+        self, mock_integration_setup, mocker, mock_config_file
     ):
         config_data = """
 # Complex config with various settings
@@ -149,13 +138,13 @@ quality=--borderless -W 1920 -H 1080 --framerate-limit=60
 balanced=-W 1920 -H 1080 --fsr-sharpness 8
 """
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch("sys.argv", ["nscb", "-p", "performance", "-W", "3200"])
 
-        with pytest.raises(SystemExitCalled):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         called_cmd = mock_integration_setup["run_nonblocking"].call_args[0][0]
         assert "gamescope" in called_cmd
@@ -166,21 +155,20 @@ balanced=-W 1920 -H 1080 --fsr-sharpness 8
     def test_main_environment_variable_integration(
         self,
         mock_integration_setup,
-        mock_system_exit,
         mocker,
         mock_config_file,
         mock_env_commands,
     ):
         config_data = "gaming=-f -W 1920 -H 1080\n"
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mock_env_commands("before_cmd", "after_cmd")
         mocker.patch("sys.argv", ["nscb", "-p", "gaming", "--", "app"])
 
-        with pytest.raises(SystemExitCalled):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         called_cmd = mock_integration_setup["run_nonblocking"].call_args[0][0]
         assert "before_cmd" in called_cmd
@@ -192,7 +180,7 @@ class TestProfileCombinations:
     """Test profile combinations and merging"""
 
     def test_profile_complex_combinations(
-        self, mock_integration_setup, mock_system_exit, mocker, mock_config_file
+        self, mock_integration_setup, mocker, mock_config_file
     ):
         config_data = """
 performance=-f -W 2560 -H 1440 --mangoapp --framerate-limit=120
@@ -203,15 +191,15 @@ ultrawide=-f -W 3440 -H 1440
 
         mock_integration_setup["run_nonblocking"].reset_mock()
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch(
             "sys.argv", ["nscb", "--profiles=performance,quality", "--", "game"]
         )
 
-        with pytest.raises(SystemExitCalled):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         assert mock_integration_setup["run_nonblocking"].call_count > 0
 
@@ -225,17 +213,17 @@ ultrawide=-f -W 3440 -H 1440
         assert "game" in called_cmd
 
     def test_profile_override_precedence_real_scenarios(
-        self, mock_integration_setup, mock_system_exit, mocker, mock_config_file
+        self, mock_integration_setup, mocker, mock_config_file
     ):
         config_data = "gaming=-f -W 1920 -H 1080 --mangoapp\n"
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch("sys.argv", ["nscb", "-p", "gaming", "--borderless", "-W", "3200"])
 
-        with pytest.raises(SystemExitCalled):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         called_cmd = mock_integration_setup["run_nonblocking"].call_args[0][0]
         assert "--borderless" in called_cmd
@@ -244,25 +232,21 @@ ultrawide=-f -W 3440 -H 1440
         assert "1920" not in called_cmd
         assert "--mangoapp" in called_cmd
 
-    def test_profile_error_non_existent(
-        self, mock_system_exit, mocker, mock_config_file
-    ):
-        mocker.patch("nscb.find_executable", return_value=True)
+    def test_profile_error_non_existent(self, mocker, mock_config_file):
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file("existing=--borderless\n")
         mock_log = mocker.patch("logging.error")
         mocker.patch("sys.argv", ["nscb", "-p", "nonexistent"])
 
-        with pytest.raises(SystemExitCalled) as cm:
-            main()
-
-        assert cm.value.code == 1
+        result = main()
+        assert result == 1
         mock_log.assert_called_with("profile nonexistent not found")
 
     def test_profile_config_format_variations(self):
         import os
         import tempfile
 
-        from nscb import load_config
+        from nscb import ConfigManager
 
         config_data = """# Performance profile
 performance="-f -W 2560 -H 1440"
@@ -285,7 +269,7 @@ gaming=--borderless -W 1920 -H 1080
             temp_config_path = temp_file.name
 
         try:
-            config = load_config(Path(temp_config_path))
+            config = ConfigManager.load_config(Path(temp_config_path))
 
             assert "performance" in config
             assert config["performance"] == "-f -W 2560 -H 1440"
@@ -305,7 +289,7 @@ gaming=--borderless -W 1920 -H 1080
             os.unlink(temp_config_path)
 
     def test_profile_multiple_interaction_scenarios(
-        self, mock_integration_setup, mock_system_exit, mocker, mock_config_file
+        self, mock_integration_setup, mocker, mock_config_file
     ):
         config_data = """
 gaming=-f -W 1920 -H 1080 --mangoapp
@@ -315,16 +299,16 @@ performance=-H 1440 --framerate-limit=120
 
         mock_integration_setup["run_nonblocking"].reset_mock()
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch(
             "sys.argv",
             ["nscb", "--profiles=gaming,streaming,performance", "--", "game"],
         )
 
-        with pytest.raises(SystemExitCalled):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         assert mock_integration_setup["run_nonblocking"].call_count > 0
 
@@ -337,22 +321,22 @@ performance=-H 1440 --framerate-limit=120
         assert "--framerate-limit=120" in called_cmd
 
     def test_profile_argument_merging_real_workflow(
-        self, mock_integration_setup, mock_system_exit, mocker, mock_config_file
+        self, mock_integration_setup, mocker, mock_config_file
     ):
         config_data = "mixed=-f -W 1920 -H 1080 --mangoapp --fsr-sharpness 5\n"
 
         mock_integration_setup["run_nonblocking"].reset_mock()
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch(
             "sys.argv",
             ["nscb", "-p", "mixed", "--borderless", "-W", "3840", "-H", "2160"],
         )
 
-        with pytest.raises(SystemExitCalled):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         assert mock_integration_setup["run_nonblocking"].call_count > 0
 
@@ -369,17 +353,17 @@ class TestExecutionFlow:
     """Test command execution flow"""
 
     def test_execution_full_command_building(self, mocker):
-        from nscb import build_command, get_env_commands
+        from nscb import CommandExecutor
 
         mocker.patch.dict(
             "os.environ",
             {"NSCB_PRE_CMD": "echo start", "NSCB_POST_CMD": "echo end"},
             clear=True,
         )
-        pre_cmd, post_cmd = get_env_commands()
+        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
 
         parts = [pre_cmd, "gamescope -f -- myapp", post_cmd]
-        built_cmd = build_command(parts)
+        built_cmd = CommandExecutor.build_command(parts)
 
         assert "echo start" in built_cmd
         assert "gamescope -f -- myapp" in built_cmd
@@ -394,11 +378,11 @@ class TestExecutionFlow:
             {"NSCB_PRE_CMD": "export VAR=test", "NSCB_POST_CMD": "echo done"},
             clear=True,
         )
-        from nscb import build_command, get_env_commands
+        from nscb import CommandExecutor
 
-        pre_cmd, post_cmd = get_env_commands()
+        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
         command_parts = [pre_cmd, "gamescope test", post_cmd]
-        full_cmd = build_command(command_parts)
+        full_cmd = CommandExecutor.build_command(command_parts)
 
         assert "export VAR=test" in full_cmd
         assert "echo done" in full_cmd
@@ -407,55 +391,41 @@ class TestExecutionFlow:
     def test_execution_nonblocking_flow(self):
         import inspect
 
-        from nscb import run_nonblocking
+        from nscb import CommandExecutor
 
-        sig = inspect.signature(run_nonblocking)
+        sig = inspect.signature(CommandExecutor.run_nonblocking)
         assert len(sig.parameters) == 1
         assert "cmd" in sig.parameters
 
     def test_execution_command_execution_variations(self, mocker):
-        from nscb import execute_gamescope_command
+        from nscb import CommandExecutor
 
         # Test with gamescope not active
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
-        mock_run = mocker.patch("nscb.run_nonblocking", return_value=0)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
+        mock_run = mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=0)
         mocker.patch("builtins.print")
         mocker.patch("sys.exit")
 
-        try:
-            execute_gamescope_command(["-f", "--", "testapp"])
-        except Exception:
-            pass
-
-        assert mock_run.called
+        result = CommandExecutor.execute_gamescope_command(["-f", "--", "testapp"])
+        assert result == 0
 
         # Test with gamescope active
-        mocker.patch("nscb.is_gamescope_active", return_value=True)
-        mock_run = mocker.patch("nscb.run_nonblocking", return_value=0)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=True)
+        mock_run = mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=0)
         mocker.patch("builtins.print")
-        mocker.patch("sys.exit")
 
-        try:
-            execute_gamescope_command(["-f", "--", "testapp"])
-        except Exception:
-            pass
-
-        assert mock_run.called
+        result = CommandExecutor.execute_gamescope_command(["-f", "--", "testapp"])
+        assert result == 0
 
     def test_execution_error_handling_in_engine(self, mocker):
-        from nscb import execute_gamescope_command
+        from nscb import CommandExecutor
 
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
-        mocker.patch("nscb.run_nonblocking", return_value=1)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=1)
         mocker.patch("builtins.print")
-        mock_exit = mocker.patch("sys.exit")
 
-        try:
-            execute_gamescope_command(["-f", "--", "testapp"])
-        except Exception:
-            pass
-
-        mock_exit.assert_called_with(1)
+        result = CommandExecutor.execute_gamescope_command(["-f", "--", "testapp"])
+        assert result == 1
 
 
 class TestEnvironmentVariables:
@@ -486,28 +456,28 @@ class TestEnvironmentVariables:
     )
     def test_environment_commands_integration(self, mocker, env_vars, expected):
         mocker.patch.dict("os.environ", env_vars, clear=True)
-        result = get_env_commands()
+        result = CommandExecutor.get_env_commands()
         assert result == expected
 
     def test_env_pre_post_command_flow(self, mocker):
-        from nscb import build_command, get_env_commands
+        from nscb import CommandExecutor
 
         mocker.patch.dict(
             "os.environ",
             {"NSCB_PRE_CMD": "echo 'starting'", "NSCB_POST_CMD": "echo 'finished'"},
             clear=True,
         )
-        pre_cmd, post_cmd = get_env_commands()
+        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
 
         command_parts = [pre_cmd, "gamescope -f -- testapp", post_cmd]
-        full_cmd = build_command(command_parts)
+        full_cmd = CommandExecutor.build_command(command_parts)
 
         assert "echo 'starting'" in full_cmd
         assert "echo 'finished'" in full_cmd
         assert "gamescope -f -- testapp" in full_cmd
 
     def test_env_variable_fallback_behavior(self, mocker):
-        from nscb import get_env_commands
+        from nscb import CommandExecutor
 
         test_cases = [
             (
@@ -535,11 +505,11 @@ class TestEnvironmentVariables:
 
         for env_vars, expected in test_cases:
             mocker.patch.dict("os.environ", env_vars, clear=True)
-            result = get_env_commands()
+            result = CommandExecutor.get_env_commands()
             assert result == expected
 
     def test_env_command_chaining_scenarios(self):
-        from nscb import build_command
+        from nscb import CommandExecutor
 
         test_cases = [
             (["cmd1", "cmd2"], "cmd1; cmd2"),
@@ -550,23 +520,23 @@ class TestEnvironmentVariables:
         ]
 
         for parts, expected_contains in test_cases:
-            result = build_command(parts)
+            result = CommandExecutor.build_command(parts)
             if expected_contains:
                 for part in expected_contains.split("; "):
                     if part.strip():
                         assert part.strip() in result
 
     def test_env_empty_variable_handling(self, mocker):
-        from nscb import build_command, get_env_commands
+        from nscb import CommandExecutor
 
         mocker.patch.dict(
             "os.environ", {"NSCB_PRE_CMD": "", "NSCB_POST_CMD": ""}, clear=True
         )
-        pre_cmd, post_cmd = get_env_commands()
+        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
         assert pre_cmd == ""
         assert post_cmd == ""
 
-        full_cmd = build_command([pre_cmd, "gamescope test", post_cmd])
+        full_cmd = CommandExecutor.build_command([pre_cmd, "gamescope test", post_cmd])
         assert "gamescope test" in full_cmd
 
     def test_env_mixed_scenario_execution(
@@ -574,14 +544,14 @@ class TestEnvironmentVariables:
     ):
         config_data = "test_profile=-f -W 1920 -H 1080\n"
 
-        mocker.patch("nscb.find_executable", return_value=True)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
         mock_config_file(config_data)
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mock_env_commands("before", "after")
         mocker.patch("sys.argv", ["nscb", "-p", "test_profile", "--", "myapp"])
 
-        with pytest.raises((SystemExitCalled, SystemExit)):
-            main()
+        result = main()
+        assert result == 0  # main now returns an exit code instead of calling sys.exit
 
         if mock_integration_setup["run_nonblocking"].call_args:
             called_cmd = mock_integration_setup["run_nonblocking"].call_args[0][0]
@@ -599,4 +569,4 @@ class TestGamescopeDetection:
         mocker.patch.dict(
             "os.environ", {"XDG_CURRENT_DESKTOP": "gamescope"}, clear=True
         )
-        assert is_gamescope_active() is True
+        assert SystemDetector.is_gamescope_active() is True

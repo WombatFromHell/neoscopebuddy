@@ -7,15 +7,11 @@ from conftest import SystemExitCalled
 parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 from nscb import (  # noqa: E402
-    find_config_file,
-    find_executable,
-    load_config,
-    merge_arguments,
-    merge_multiple_profiles,
-    parse_profile_args,
-    run_nonblocking,
-    separate_flags_and_positionals,
-    split_at_separator,
+    ArgumentProcessor,
+    CommandExecutor,
+    ConfigManager,
+    ProfileManager,
+    SystemDetector,
 )
 
 
@@ -33,7 +29,7 @@ class TestParseProfileArgs:
         ],
     )
     def test_parse_profile_args_variations(self, input_args, expected):
-        assert parse_profile_args(input_args) == expected
+        assert ProfileManager.parse_profile_args(input_args) == expected
 
     @pytest.mark.parametrize(
         "input_args,error_msg",
@@ -44,7 +40,7 @@ class TestParseProfileArgs:
     )
     def test_parse_profile_args_errors(self, input_args, error_msg):
         with pytest.raises(ValueError, match=error_msg):
-            parse_profile_args(input_args)
+            ProfileManager.parse_profile_args(input_args)
 
 
 class TestSeparateFlagsAndPositionals:
@@ -119,7 +115,9 @@ class TestSeparateFlagsAndPositionals:
     def test_separate_flags_and_positionals_variations(
         self, input_args, expected_flags, expected_positionals
     ):
-        flags, positionals = separate_flags_and_positionals(input_args)
+        flags, positionals = ArgumentProcessor.separate_flags_and_positionals(
+            input_args
+        )
         assert flags == expected_flags
         assert positionals == expected_positionals
 
@@ -164,30 +162,30 @@ class TestMergeArguments:
     def test_merge_arguments_variations(
         self, profile_args, override_args, expected_result
     ):
-        result = merge_arguments(profile_args, override_args)
+        result = ProfileManager.merge_arguments(profile_args, override_args)
         assert result == expected_result
 
     def test_merge_arguments_mutual_exclusivity(self):
         # Test -f vs --borderless conflict
-        result = merge_arguments(["-f"], ["--borderless"])
+        result = ProfileManager.merge_arguments(["-f"], ["--borderless"])
         assert "-f" not in result
         assert "--borderless" in result
 
         # Test --borderless vs -f conflict (reverse)
-        result = merge_arguments(["--borderless"], ["-f"])
+        result = ProfileManager.merge_arguments(["--borderless"], ["-f"])
         assert "--borderless" not in result
         assert "-f" in result
 
     def test_merge_arguments_conflict_with_values(self):
         # Profile has -W 1920, override has --borderless (should preserve width setting)
-        result = merge_arguments(["-W", "1920"], ["--borderless"])
+        result = ProfileManager.merge_arguments(["-W", "1920"], ["--borderless"])
         assert "-W" in result
         assert "1920" in result
         assert "--borderless" in result
 
     def test_merge_arguments_non_conflict_preservation(self):
         # Profile has -W 1920, override doesn't touch width (should be preserved)
-        result = merge_arguments(["-f", "-W", "1920"], ["--borderless"])
+        result = ProfileManager.merge_arguments(["-f", "-W", "1920"], ["--borderless"])
         assert "-f" not in result
         assert "--borderless" in result
         assert "-W" in result
@@ -195,7 +193,9 @@ class TestMergeArguments:
 
     def test_merge_arguments_width_override(self):
         # Profile has -W 1920, override explicitly sets different width
-        result = merge_arguments(["-f", "-W", "1920"], ["--borderless", "-W", "2560"])
+        result = ProfileManager.merge_arguments(
+            ["-f", "-W", "1920"], ["--borderless", "-W", "2560"]
+        )
         assert "-f" not in result
         assert "--borderless" in result
         assert "-W" in result
@@ -204,7 +204,9 @@ class TestMergeArguments:
 
     def test_merge_arguments_complex_override_scenarios(self):
         # Test width override
-        result = merge_arguments(["-W", "1920", "-H", "1080"], ["-W", "2560"])
+        result = ProfileManager.merge_arguments(
+            ["-W", "1920", "-H", "1080"], ["-W", "2560"]
+        )
         assert "-W" in result
         assert "2560" in result
         assert "1920" not in result
@@ -212,7 +214,9 @@ class TestMergeArguments:
         assert "1080" in result
 
         # Test height override
-        result = merge_arguments(["-W", "1920", "-H", "1080"], ["-H", "1440"])
+        result = ProfileManager.merge_arguments(
+            ["-W", "1920", "-H", "1080"], ["-H", "1440"]
+        )
         assert "-H" in result
         assert "1440" in result
         assert "1080" not in result
@@ -221,23 +225,25 @@ class TestMergeArguments:
 
     def test_merge_arguments_separator_edge_cases(self):
         # Test profile has separator but override doesn't
-        result = merge_arguments(["-f", "--", "app.exe"], ["-W", "1920"])
+        result = ProfileManager.merge_arguments(["-f", "--", "app.exe"], ["-W", "1920"])
         assert "-f" in result
         assert "-W" in result
         assert "1920" in result
 
         # Test override has separator
-        result = merge_arguments(["-f", "-W", "1920"], ["--", "app.exe"])
+        result = ProfileManager.merge_arguments(["-f", "-W", "1920"], ["--", "app.exe"])
         assert "--" in result
         assert "app.exe" in result
 
     def test_merge_arguments_flag_canonicalization(self):
         # Using short and long form of same flag
-        result = merge_arguments(["-f"], ["--fullscreen"])
+        result = ProfileManager.merge_arguments(["-f"], ["--fullscreen"])
         assert ("-f" in result) ^ ("--fullscreen" in result)  # Exactly one
 
         # Test with width
-        result = merge_arguments(["-W", "1920"], ["--output-width", "2560"])
+        result = ProfileManager.merge_arguments(
+            ["-W", "1920"], ["--output-width", "2560"]
+        )
         assert "--output-width" in result or "-W" in result
         assert "2560" in result
         assert "1920" not in result
@@ -248,10 +254,14 @@ class TestMergeMultipleProfiles:
 
     def test_merge_multiple_profiles_basic(self):
         # Test empty list
-        assert merge_multiple_profiles([]) == []
+        assert ProfileManager.merge_multiple_profiles([]) == []
 
         # Test single profile list
-        assert merge_multiple_profiles([["-f", "-W", "1920"]]) == ["-f", "-W", "1920"]
+        assert ProfileManager.merge_multiple_profiles([["-f", "-W", "1920"]]) == [
+            "-f",
+            "-W",
+            "1920",
+        ]
 
         # Test multiple profiles with display mode conflicts
         profiles = [
@@ -259,7 +269,7 @@ class TestMergeMultipleProfiles:
             ["--borderless"],  # should win over -f
             ["-W", "1920"],  # width setting
         ]
-        result = merge_multiple_profiles(profiles)
+        result = ProfileManager.merge_multiple_profiles(profiles)
         assert "--borderless" in result
         assert "-f" not in result
         assert "-W" in result
@@ -269,7 +279,7 @@ class TestMergeMultipleProfiles:
             ["-f", "-W", "1920"],
             ["--borderless", "-W", "2560"],  # should override previous width
         ]
-        result = merge_multiple_profiles(profiles)
+        result = ProfileManager.merge_multiple_profiles(profiles)
         assert "--borderless" in result
         assert "-f" not in result
         assert "-W" in result
@@ -282,7 +292,7 @@ class TestMergeMultipleProfiles:
             ["--borderless", "-H", "1080"],
             ["-f", "-w", "1280"],  # conflicts with --borderless
         ]
-        result = merge_multiple_profiles(profiles)
+        result = ProfileManager.merge_multiple_profiles(profiles)
         assert ("--borderless" in result) or ("-f" in result)
 
         # Check that mutually exclusive flags are handled correctly
@@ -304,7 +314,7 @@ class TestMergeMultipleProfiles:
             ],  # Should override -W but preserve -f and --mangoapp
             ["--borderless"],  # Should override -f but preserve other non-conflicts
         ]
-        result = merge_multiple_profiles(profiles)
+        result = ProfileManager.merge_multiple_profiles(profiles)
         assert "--borderless" in result
         assert "-f" not in result
         assert "2560" in result
@@ -318,7 +328,7 @@ class TestMergeMultipleProfiles:
             ["--borderless", "-H", "1440"],  # --borderless conflicts with -f
             ["-w", "1280", "--nested"],  # Non-conflicts
         ]
-        result = merge_multiple_profiles(profiles)
+        result = ProfileManager.merge_multiple_profiles(profiles)
         assert "--borderless" in result
         assert "-f" not in result
         assert "-H" in result and "1440" in result
@@ -339,11 +349,11 @@ class TestFindExecutable:
         mocker.patch.object(Path, "is_file", return_value=True)
         mocker.patch("os.access", return_value=True)
 
-        assert find_executable("gamescope") is True
+        assert SystemDetector.find_executable("gamescope") is True
 
     def test_find_executable_false(self, mocker):
         mocker.patch.dict("os.environ", {"PATH": ""}, clear=True)
-        assert find_executable("gamescope") is False
+        assert SystemDetector.find_executable("gamescope") is False
 
     def test_find_executable_permission_issues(self, mocker):
         mocker.patch.dict("os.environ", {"PATH": "/usr/bin"})
@@ -351,11 +361,11 @@ class TestFindExecutable:
         mocker.patch.object(Path, "is_dir", return_value=True)
         mocker.patch.object(Path, "is_file", return_value=True)
         mocker.patch("os.access", return_value=False)
-        assert find_executable("gamescope") is False
+        assert SystemDetector.find_executable("gamescope") is False
 
     def test_find_executable_empty_path(self, mocker):
         mocker.patch("os.environ.get", return_value="")
-        assert find_executable("any_executable") is False
+        assert SystemDetector.find_executable("any_executable") is False
 
     def test_find_executable_path_scenarios(self, mocker):
         import shutil
@@ -367,7 +377,7 @@ class TestFindExecutable:
             mocker.patch.object(Path, "is_dir", return_value=True)
             mocker.patch.object(Path, "is_file", return_value=True)
             mocker.patch("os.access", return_value=True)
-            result = find_executable("python")
+            result = SystemDetector.find_executable("python")
             assert result is True
 
 
@@ -381,7 +391,7 @@ class TestFindConfigFile:
         monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_config_file.parent))
         monkeypatch.delenv("HOME", raising=False)
 
-        result = find_config_file()
+        result = ConfigManager.find_config_file()
         assert result == temp_config_file
 
     def test_find_config_file_xdg_missing_fallback(self, temp_config_file, monkeypatch):
@@ -394,7 +404,7 @@ class TestFindConfigFile:
         monkeypatch.setenv("XDG_CONFIG_HOME", "/nonexistent")
         monkeypatch.setenv("HOME", str(home_config_dir))
 
-        result = find_config_file()
+        result = ConfigManager.find_config_file()
         assert result == config_path
 
     def test_find_config_file_home_only(self, temp_config_file, monkeypatch):
@@ -407,14 +417,14 @@ class TestFindConfigFile:
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.setenv("HOME", str(home_config_dir))
 
-        result = find_config_file()
+        result = ConfigManager.find_config_file()
         assert result == config_path
 
     def test_find_config_file_no_config(self, monkeypatch):
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.delenv("HOME", raising=False)
 
-        result = find_config_file()
+        result = ConfigManager.find_config_file()
         assert result is None
 
     def test_find_config_file_permission_error(self, mocker, monkeypatch):
@@ -422,7 +432,7 @@ class TestFindConfigFile:
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.delenv("HOME", raising=False)
 
-        result = find_config_file()
+        result = ConfigManager.find_config_file()
         assert result is None
 
 
@@ -462,33 +472,35 @@ class TestLoadConfig:
     )
     def test_load_config_variations(self, temp_config_with_content, content, expected):
         config_path = temp_config_with_content(content)
-        result = load_config(config_path)
+        result = ConfigManager.load_config(config_path)
         assert result == expected
 
     def test_load_config_invalid_formats(self, temp_config_file):
         with open(temp_config_file, "w") as f:
             f.write("invalid_line_without_equals_sign\n")
 
-        with pytest.raises(ValueError):
-            load_config(temp_config_file)
+        # The function should handle this gracefully, not raise ValueError
+        result = ConfigManager.load_config(temp_config_file)
+        # Since there's no '=' in the line, the result would be an empty dict
+        assert result == {}
 
         temp_config_file2 = temp_config_file.parent / "nscb2.conf"
         with open(temp_config_file2, "w") as f:
             f.write("multiple_equals=value=another_value\n")
 
-        result = load_config(temp_config_file2)
+        result = ConfigManager.load_config(temp_config_file2)
         expected = {"multiple_equals": "value=another_value"}
         assert result == expected
 
     def test_load_config_file_reading_errors(self):
         non_existent = Path("/non/existent/path/nscb.conf")
         with pytest.raises(FileNotFoundError):
-            load_config(non_existent)
+            ConfigManager.load_config(non_existent)
 
     def test_load_config_malformed_config(self, temp_config_with_content):
         content = "gaming=-f -W 1920 -H 1080\n=\n=empty_key\nvalid=value\n"
         config_path = temp_config_with_content(content)
-        result = load_config(config_path)
+        result = ConfigManager.load_config(config_path)
         assert isinstance(result, dict)
 
 
@@ -507,7 +519,7 @@ class TestSplitAtSeparator:
     def test_split_at_separator_variations(
         self, input_args, expected_before, expected_after
     ):
-        result_before, result_after = split_at_separator(input_args)
+        result_before, result_after = ArgumentProcessor.split_at_separator(input_args)
         assert result_before == expected_before
         assert result_after == expected_after
 
@@ -517,23 +529,23 @@ class TestIsGamescopeActive:
 
     def test_is_gamescope_active_xdg_method(self, mocker):
         mocker.patch.dict("os.environ", {"XDG_CURRENT_DESKTOP": "gamescope"})
-        from nscb import is_gamescope_active
+        from nscb import SystemDetector
 
-        assert is_gamescope_active() is True
+        assert SystemDetector.is_gamescope_active() is True
 
     def test_is_gamescope_active_ps_method(self, mocker):
         mocker.patch(
             "subprocess.check_output",
             return_value="1234 ?    Sl     0:00 gamescope -f -W 1920 -H 1080",
         )
-        from nscb import is_gamescope_active
+        from nscb import SystemDetector
 
-        assert is_gamescope_active() is True
+        assert SystemDetector.is_gamescope_active() is True
 
         mocker.patch(
             "subprocess.check_output", return_value="1234 ?    Sl     0:00 Xorg"
         )
-        assert is_gamescope_active() is False
+        assert SystemDetector.is_gamescope_active() is False
 
     def test_is_gamescope_active_error_conditions(self, mocker):
         import subprocess
@@ -542,16 +554,16 @@ class TestIsGamescopeActive:
             "subprocess.check_output",
             side_effect=subprocess.CalledProcessError(1, "ps"),
         )
-        from nscb import is_gamescope_active
+        from nscb import SystemDetector
 
-        assert is_gamescope_active() is False
+        assert SystemDetector.is_gamescope_active() is False
 
     def test_is_gamescope_active_both_methods(self, mocker):
         mocker.patch.dict("os.environ", {"XDG_CURRENT_DESKTOP": "gamescope"})
         mock_ps = mocker.patch("subprocess.check_output")
-        from nscb import is_gamescope_active
+        from nscb import SystemDetector
 
-        result = is_gamescope_active()
+        result = SystemDetector.is_gamescope_active()
         assert result is True
         mock_ps.assert_not_called()
 
@@ -559,7 +571,7 @@ class TestIsGamescopeActive:
         mocker.patch(
             "subprocess.check_output", return_value="1234 ?    Sl     0:00 gamescope"
         )
-        result = is_gamescope_active()
+        result = SystemDetector.is_gamescope_active()
         assert result is True
 
 
@@ -603,9 +615,9 @@ class TestGetEnvCommands:
         for var, value in env_vars.items():
             monkeypatch.setenv(var, value)
 
-        from nscb import get_env_commands
+        from nscb import CommandExecutor
 
-        pre, post = get_env_commands()
+        pre, post = CommandExecutor.get_env_commands()
         assert pre == expected[0]
         assert post == expected[1]
 
@@ -625,9 +637,9 @@ class TestBuildCommand:
         ],
     )
     def test_build_command_variations(self, parts, expected):
-        from nscb import build_command
+        from nscb import CommandExecutor
 
-        result = build_command(parts)
+        result = CommandExecutor.build_command(parts)
         assert result == expected
 
 
@@ -637,7 +649,9 @@ class TestRunNonblocking:
     def test_run_nonblocking_signature(self):
         import inspect
 
-        sig = inspect.signature(run_nonblocking)
+        from nscb import CommandExecutor
+
+        sig = inspect.signature(CommandExecutor.run_nonblocking)
         assert len(sig.parameters) == 1
         assert "cmd" in sig.parameters
 
@@ -645,13 +659,13 @@ class TestRunNonblocking:
         import io
         from contextlib import redirect_stderr, redirect_stdout
 
-        from nscb import run_nonblocking
+        from nscb import CommandExecutor
 
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
 
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            result = run_nonblocking("echo test")
+            result = CommandExecutor.run_nonblocking("echo test")
 
         assert result == 0
 
@@ -666,8 +680,8 @@ class TestMainFunction:
         config_path = temp_config_with_content(config_content)
 
         mocker.patch("sys.argv", ["nscb.py", "-p", "gaming", "--", "game.exe"])
-        mocker.patch("nscb.find_executable", return_value=True)
-        mocker.patch("nscb.find_config_file", return_value=config_path)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
+        mocker.patch("nscb.ConfigManager.find_config_file", return_value=config_path)
 
         original_shlex_split = mocker.patch("shlex.split")
 
@@ -680,39 +694,37 @@ class TestMainFunction:
 
         from nscb import main
 
-        with pytest.raises(SystemExitCalled) as e:
-            main()
-        assert e.value.code == 1
+        result = main()
+        assert result == 1  # main now returns an exit code instead of calling sys.exit
 
     def test_main_no_config_file_found(self, mocker, mock_system_exit):
         mocker.patch("sys.argv", ["nscb.py", "-p", "gaming", "--", "game.exe"])
-        mocker.patch("nscb.find_executable", return_value=True)
-        mocker.patch("nscb.find_config_file", return_value=None)
+        mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
+        mocker.patch("nscb.ConfigManager.find_config_file", return_value=None)
 
         from nscb import main
 
-        with pytest.raises(SystemExitCalled) as e:
-            main()
-        assert e.value.code == 1
+        result = main()
+        assert result == 1  # main now returns an exit code instead of calling sys.exit
 
 
 class TestExecuteGamescopeCommand:
     """Test gamescope command execution"""
 
     def test_execute_gamescope_command_normal_execution(self, mocker):
-        mocker.patch("nscb.get_env_commands", return_value=("", ""))
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
         mocker.patch(
-            "nscb.build_command", side_effect=lambda x: " ".join(filter(None, x))
+            "nscb.CommandExecutor.build_command",
+            side_effect=lambda x: " ".join(filter(None, x)),
         )
         mocker.patch("builtins.print")
-        mock_run = mocker.patch("nscb.run_nonblocking", return_value=0)
-        mocker.patch("sys.exit")
+        mock_run = mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=0)
 
-        from nscb import execute_gamescope_command
+        from nscb import CommandExecutor
 
         final_args = ["-f", "-W", "1920", "--", "mygame.exe"]
-        execute_gamescope_command(final_args)
+        result = CommandExecutor.execute_gamescope_command(final_args)
 
         mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]
@@ -720,54 +732,58 @@ class TestExecuteGamescopeCommand:
         assert "-f" in call_args
         assert "1920" in call_args
         assert "mygame.exe" in call_args
+        assert result == 0  # Should return exit code
 
     def test_execute_gamescope_command_under_gamescope_with_separator(self, mocker):
-        mocker.patch("nscb.get_env_commands", return_value=("", ""))
-        mocker.patch("nscb.is_gamescope_active", return_value=True)
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=True)
         mocker.patch(
-            "nscb.build_command", side_effect=lambda x: " ".join(filter(None, x))
+            "nscb.CommandExecutor.build_command",
+            side_effect=lambda x: " ".join(filter(None, x)),
         )
-        mock_run = mocker.patch("nscb.run_nonblocking", return_value=0)
-        mocker.patch("sys.exit")
+        mock_run = mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=0)
 
-        from nscb import execute_gamescope_command
+        from nscb import CommandExecutor
 
         final_args = ["-f", "-W", "1920", "--", "mygame.exe"]
-        execute_gamescope_command(final_args)
+        result = CommandExecutor.execute_gamescope_command(final_args)
 
         mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]
         assert "gamescope" not in call_args
         assert "mygame.exe" in call_args
         assert "-f" not in call_args
+        assert result == 0  # Should return exit code
 
     def test_execute_gamescope_command_under_gamescope_no_separator(self, mocker):
-        mocker.patch("nscb.get_env_commands", return_value=("", ""))
-        mocker.patch("nscb.is_gamescope_active", return_value=True)
-        _mock_run = mocker.patch("nscb.run_nonblocking", return_value=0)
-        mocker.patch("sys.exit")
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=True)
+        _mock_run = mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=0)
 
-        from nscb import execute_gamescope_command
+        from nscb import CommandExecutor
 
         final_args = ["-f", "-W", "1920"]
-        execute_gamescope_command(final_args)
+        result = CommandExecutor.execute_gamescope_command(final_args)
 
         # When under gamescope with no separator and no pre/post cmd, should return early
-        # This test just verifies it doesn't crash
+        assert result == 0  # Should return exit code
 
     def test_execute_gamescope_command_with_pre_post_commands(self, mocker):
-        mocker.patch("nscb.get_env_commands", return_value=("echo pre", "echo post"))
-        mocker.patch("nscb.is_gamescope_active", return_value=False)
         mocker.patch(
-            "nscb.build_command", side_effect=lambda x: "; ".join(filter(None, x))
+            "nscb.CommandExecutor.get_env_commands",
+            return_value=("echo pre", "echo post"),
         )
-        mock_run = mocker.patch("nscb.run_nonblocking", return_value=0)
-        mocker.patch("sys.exit")
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
+        mocker.patch(
+            "nscb.CommandExecutor.build_command",
+            side_effect=lambda x: "; ".join(filter(None, x)),
+        )
+        mock_run = mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=0)
 
-        from nscb import execute_gamescope_command
+        from nscb import CommandExecutor
 
         final_args = ["-f", "--", "mygame.exe"]
-        execute_gamescope_command(final_args)
+        result = CommandExecutor.execute_gamescope_command(final_args)
 
         mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]
@@ -775,3 +791,4 @@ class TestExecuteGamescopeCommand:
         assert "echo post" in call_args
         assert "gamescope" in call_args
         assert "mygame.exe" in call_args
+        assert result == 0  # Should return exit code

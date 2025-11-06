@@ -17,51 +17,74 @@ NeoscopeBuddy (nscb.py) is a Python-based gamescope wrapper that provides a prof
 
 ```mermaid
 graph TB
-    A[main] --> B[find_executable]
-    A --> C[parse_profile_args]
-    C --> D[profile_args]
-    A --> E[find_config_file]
-    A --> F[load_config]
-    F --> G[config_file]
-    A --> H[merge_multiple_profiles]
-    A --> I[execute_gamescope_command]
-    H --> J[merge_arguments]
-    I --> K[is_gamescope_active]
-    I --> L[get_env_commands]
-    I --> M[build_command]
-    I --> N[run_nonblocking]
+    A[main] --> A0[Application.run]
+    A0 --> A1[ProfileManager.parse_profile_args]
+    A0 --> A2[PathHelper.get_config_path]
+    A0 --> A3[ConfigManager.load_config]
+    A0 --> A4[ProfileManager.merge_multiple_profiles]
+    A0 --> A5[CommandExecutor.execute_gamescope_command]
+    A4 --> A6[ProfileManager.merge_arguments]
+    A5 --> A7[EnvironmentHelper.is_gamescope_active]
+    A5 --> A8[EnvironmentHelper.get_pre_post_commands]
+    A5 --> A9[CommandExecutor.run_nonblocking]
+    A0 --> A10[PathHelper.executable_exists]
 ```
 
 #### Main Entry Point (`main`)
 
-- Orchestrates the entire workflow
-- Validates dependencies (gamescope executable)
-- Parses command-line arguments
-- Loads and merges profile configurations
-- Executes the final gamescope command
+- Entry point for the application
+- Creates and runs the `Application` instance
+- Handles global exception handling and returns appropriate exit codes
 
-#### Configuration Management
+#### Application (`Application`)
+
+- Main orchestrator class that manages the entire workflow
+- Coordinates all other components
+- Handles dependency validation and execution flow
+
+#### Profile Manager (`ProfileManager`)
+
+- `parse_profile_args`: Parses profile specifications (`-p`, `--profile`, `--profiles=...`)
+- `merge_arguments`: Merges profile arguments with override arguments, implementing precedence rules
+- `merge_multiple_profiles`: Handles merging of multiple profiles using reduce
+- `_merge_flags`: Internal method to merge flags with conflict resolution
+- `_canon`: Converts flags to canonical form using `GAMESCOPE_ARGS_MAP`
+- `_flags_to_args_list`: Converts flag tuples to flat argument list
+
+#### Configuration Manager (`ConfigManager`)
 
 - `find_config_file`: Locates config at `$XDG_CONFIG_HOME/nscb.conf` or `$HOME/.config/nscb.conf`
 - `load_config`: Parses KEY=VALUE format with support for quoted values and comments
 
-#### Argument Processing
+#### Argument Processor (`ArgumentProcessor`)
 
-- `parse_profile_args`: Parses profile specifications (`-p`, `--profile`, `--profiles=...`)
-- `separate_flags_and_positionals`: Separates flags from positional arguments
 - `split_at_separator`: Handles the `--` separator that separates gamescope args from app args
+- `separate_flags_and_positionals`: Separates flags from positional arguments
 
-#### Profile System
+#### Command Executor (`CommandExecutor`)
 
-- `merge_arguments`: Merges profile arguments with override arguments, implementing precedence rules
-- `merge_multiple_profiles`: Handles merging of multiple profiles using reduce
-
-#### Execution Engine
-
-- `execute_gamescope_command`: Builds and executes the final command
-- `run_nonblocking`: Handles non-blocking I/O with real-time output forwarding
-- `is_gamescope_active`: Detects if already running under gamescope
+- `execute_gamescope_command`: Builds and executes the final command with proper handling for when gamescope is already active (bypasses gamescope wrapper when already in gamescope environment)
+- `run_nonblocking`: Handles non-blocking I/O with real-time output forwarding using selectors for efficient I/O multiplexing
 - `get_env_commands`: Retrieves pre/post execution hooks from environment variables
+- `build_command`: Builds command string from parts with proper filtering, removing empty strings to avoid semicolon artifacts and joining with semicolons to execute multiple commands
+- `build_app_command`: Internal helper that quotes application arguments using shlex.quote to prevent command injection
+- `_build_inactive_gamescope_command`: Builds command when gamescope is not active
+- `_build_active_gamescope_command`: Builds command when gamescope is already active
+
+#### System Detector (`SystemDetector`)
+
+- `find_executable`: Checks if executable exists in PATH using `PathHelper`
+- `is_gamescope_active`: Detects if already running under gamescope by using `EnvironmentHelper`
+
+#### Path Helper (`PathHelper`)
+
+- `get_config_path`: Gets the path to the config file following XDG Base Directory specification
+- `executable_exists`: Checks if an executable exists in PATH
+
+#### Environment Helper (`EnvironmentHelper`)
+
+- `get_pre_post_commands`: Gets pre/post commands from environment variables
+- `is_gamescope_active`: Determines if system runs under gamescope by checking XDG_CURRENT_DESKTOP first, then falling back to process detection
 
 ### Configuration Format
 
@@ -69,11 +92,15 @@ graph TB
 - Keys represent profile names
 - Values are space-separated gamescope arguments
 - Supports quoted values and comments (lines starting with #)
+- Quoted values have their quotes stripped during parsing
+- Empty lines and lines without equals signs are ignored
 - Example:
 
   ```
   gaming=-f -W 1920 -H 1080
   streaming=--borderless -W 1280 -H 720
+  # This is a comment
+  portable="--fsr-sharpness 5 --framerate-limit 60"
   ```
 
 ## Configuration and Argument System
@@ -102,6 +129,8 @@ GAMESCOPE_ARGS_MAP = {
 }
 ```
 
+This mapping is used to convert short form flags to long form for conflict resolution during argument merging.
+
 ### Argument Merging Logic
 
 The system implements sophisticated argument merging with the following rules:
@@ -128,8 +157,9 @@ nscb.py -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
 
 ### Profile Specification Options
 
-- `-p PROFILE` / `--profile=PROFILE`: Specify a single profile
-- `--profiles=profile1,profile2,...`: Specify multiple profiles
+- `-p PROFILE`: Specify a single profile
+- `--profile=PROFILE`: Specify a single profile (equals format)
+- `--profiles=profile1,profile2,...`: Specify multiple profiles (comma-separated)
 - Command-line arguments after profile specifications override profile settings
 
 ### Separator Usage
@@ -159,15 +189,19 @@ graph TB
 
     subgraph "Core Processing Layer"
         Main[Main Function]
-        Parser[Argument Parser]
-        Profile[System Profiler]
-        Merger[Argument Merger]
+        App[Application Class]
+        ProfileManager[ProfileManager Class]
+        ConfigManager[ConfigManager Class]
+        ArgProcessor[ArgumentProcessor Class]
+        Merger[ProfileManager.merge_arguments]
+        PathHelper[PathHelper Class]
+        EnvHelper[EnvironmentHelper Class]
     end
 
     subgraph "Execution Layer"
-        Executor[Command Executor]
-        Runner[Non-blocking Runner]
-        Detector[System Detector]
+        Executor[CommandExecutor Class]
+        Runner[CommandExecutor.run_nonblocking]
+        Detector[SystemDetector Class]
     end
 
     subgraph "External Systems"
@@ -177,17 +211,23 @@ graph TB
     end
 
     CLI --> Main
-    Config --> Parser
-    Main --> Parser
-    Parser --> Profile
-    Profile --> Merger
-    Main --> Merger
+    Main --> App
+    Config --> ConfigManager
+    App --> ProfileManager
+    App --> ConfigManager
+    App --> PathHelper
+    App --> EnvHelper
+    ProfileManager --> Merger
+    App --> Merger
     Merger --> Executor
-    Main --> Detector
+    App --> Detector
     Executor --> Runner
     Executor --> Gamescope
-    Parser --> FS
+    ProfileManager --> ArgProcessor
+    ConfigManager --> FS
     Executor --> Env
+    App --> PathHelper
+    App --> EnvHelper
 ```
 
 ## Data Flow Process
@@ -195,25 +235,25 @@ graph TB
 The application follows this data flow:
 
 1. **Input Parsing**:
-   - Command line arguments are parsed by `parse_profile_args`
+   - Command line arguments are parsed by `ProfileManager.parse_profile_args`
    - Profile specifications are extracted and remaining args are preserved
 
 2. **Configuration Loading**:
-   - Config file is located using `find_config_file`
-   - Profile arguments are loaded from config using `load_config`
+   - Config file is located using `ConfigManager.find_config_file`
+   - Profile arguments are loaded from config using `ConfigManager.load_config`
 
 3. **Argument Merging**:
-   - Profile arguments and override arguments are merged using `merge_arguments`
+   - Profile arguments and override arguments are merged using `ProfileManager.merge_arguments`
    - Conflict resolution occurs during merging
-   - Multiple profiles are merged using `merge_multiple_profiles`
+   - Multiple profiles are merged using `ProfileManager.merge_multiple_profiles`
 
 4. **Execution Preparation**:
-   - Gamescope active status is checked using `is_gamescope_active`
-   - Environment commands are retrieved using `get_env_commands`
-   - Final command is built using `build_command`
+   - Gamescope active status is checked using `SystemDetector.is_gamescope_active`
+   - Environment commands are retrieved using `CommandExecutor.get_env_commands`
+   - Final command is built using `CommandExecutor.build_command`
 
 5. **Execution**:
-   - Command is executed with non-blocking I/O using `run_nonblocking`
+   - Command is executed with non-blocking I/O using `CommandExecutor.run_nonblocking`
    - Output is forwarded in real-time
 
 ## Key Workflow
@@ -222,39 +262,51 @@ The application follows this data flow:
 sequenceDiagram
     participant U as User
     participant M as main()
-    participant P as parse_profile_args()
-    participant C as find_config_file()
-    participant L as load_config()
-    participant A as merge_multiple_profiles()
-    participant E as execute_gamescope_command()
-    participant R as run_nonblocking()
+    participant App as Application
+    participant PM as ProfileManager
+    participant CM as ConfigManager
+    participant PH as PathHelper
+    participant EH as EnvironmentHelper
+    participant CE as CommandExecutor
+    participant SD as SystemDetector
 
     U->>M: Execute nscb with profiles and args
-    M->>P: Parse profile arguments
-    P->>M: Return profiles and remaining args
-    M->>C: Find config file
-    C->>M: Return config file path
-    M->>L: Load config from file
-    L->>M: Return config dictionary
-    M->>A: Merge profile args with overrides
-    A->>M: Return merged arguments
-    M->>E: Execute final command
-    E->>R: Run non-blocking command
-    R->>U: Forward process output in real-time
+    M->>App: Application.run()
+    App->>PH: PathHelper.executable_exists()
+    App->>PM: ProfileManager.parse_profile_args()
+    PM->>App: Return profiles and remaining args
+    App->>PH: PathHelper.get_config_path()
+    PH->>App: Return config file path
+    App->>CM: ConfigManager.load_config()
+    CM->>App: Return config dictionary
+    App->>PM: ProfileManager.merge_multiple_profiles()
+    PM->>App: Return merged arguments
+    App->>CE: CommandExecutor.execute_gamescope_command()
+    CE->>EH: EnvironmentHelper.is_gamescope_active()
+    EH->>CE: Return gamescope status
+    CE->>CE: CommandExecutor.run_nonblocking()
+    CE->>U: Forward process output in real-time
 ```
 
 ## Argument Merging Algorithm
 
-The `merge_arguments` function implements the following logic:
+The `ProfileManager.merge_arguments` function implements the following logic:
 
-1. **Separation**: Arguments are split at the `--` separator
-2. **Classification**: Flags and positionals are separated using `separate_flags_and_positionals`
+1. **Separation**: Arguments are split at the `--` separator using `ArgumentProcessor.split_at_separator`
+2. **Classification**: Flags and positionals are separated using `ArgumentProcessor.separate_flags_and_positionals`
 3. **Canonicalization**: Short form flags are converted to long form using `GAMESCOPE_ARGS_MAP`
 4. **Conflict Identification**: Display mode flags (`-f`, `--fullscreen`, `-b`, `--borderless`) are identified as mutually exclusive
 5. **Classification**: Flags are classified as conflict or non-conflict
 6. **Resolution**: Override conflict flags take precedence over profile conflict flags
 7. **Preservation**: Non-conflict profile flags are preserved unless overridden
 8. **Assembly**: Final ordered argument list is assembled and flattened
+
+The algorithm handles argument separation by:
+
+- Splitting arguments into before and after the `--` separator (which separates gamescope args from app args)
+- Processing flags and their potential values as tuples (flag, value)
+- Preserving positional arguments in their original order
+- Maintaining proper argument ordering in the final output
 
 ## Development Guidelines
 
@@ -264,11 +316,26 @@ The `merge_arguments` function implements the following logic:
 - Ensure new arguments work with argument separation logic
 - Test with profile system and override functionality
 
+### Type Aliases
+
+The codebase defines the following type aliases for better readability:
+
+- `ArgsList = list[str]`: List of string arguments
+- `FlagTuple = tuple[str, str | None]`: Tuple representing a flag and its optional value
+- `ProfileArgs = dict[str, str]`: Dictionary mapping profile names to arguments
+- `ConfigData = dict[str, str]`: Dictionary representing configuration data
+- `ExitCode = int`: Integer representing exit codes
+- `ProfileArgsList = list[ArgsList]`: List of argument lists for multiple profiles
+
 ### Security Considerations
 
 - Uses `shlex.quote()` for command construction to prevent injection
-- Validates executable paths before execution
+- Validates executable paths before execution using `PathHelper`
 - Sanitizes user input from config files
+- Implements proper exception handling with custom exception classes:
+  - `NscbError`: Base exception for nscb errors
+  - `ConfigNotFoundError`: Raised when config file cannot be found
+  - `ProfileNotFoundError`: Raised when a specified profile is not found in config
 
 ### Testing Approach
 
@@ -331,3 +398,12 @@ The test suite covers these key areas:
 - The merging logic can accommodate new conflict patterns
 - Environment hook system allows for pre/post execution customization
 - Testing framework supports new test categories and scenarios
+- All major functionality is encapsulated in classes making it easy to extend:
+  - `Application` for main orchestration
+  - `ProfileManager` for profile-related functionality
+  - `ConfigManager` for configuration handling
+  - `ArgumentProcessor` for argument manipulation
+  - `CommandExecutor` for command execution
+  - `SystemDetector` for system detection
+  - `PathHelper` for path-related utilities
+  - `EnvironmentHelper` for environment-related utilities

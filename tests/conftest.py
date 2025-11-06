@@ -26,8 +26,12 @@ def mock_system_exit(mocker):
 @pytest.fixture
 def mock_integration_setup(mocker):
     """Fixture to set up common mocking for integration tests"""
-    mock_run_nonblocking = mocker.patch("nscb.run_nonblocking", return_value=0)
-    mock_build = mocker.patch("nscb.build_command", side_effect=lambda x: "; ".join(x))
+    mock_run_nonblocking = mocker.patch(
+        "nscb.CommandExecutor.run_nonblocking", return_value=0
+    )
+    mock_build = mocker.patch(
+        "nscb.CommandExecutor.build_command", side_effect=lambda x: "; ".join(x)
+    )
     mock_print = mocker.patch("builtins.print")
 
     return {
@@ -66,7 +70,7 @@ def temp_config_with_content():
 @pytest.fixture
 def mock_gamescope(mocker):
     """Fixture for mock gamescope executable."""
-    return mocker.patch("nscb.find_executable", return_value=True)
+    return mocker.patch("nscb.SystemDetector.find_executable", return_value=True)
 
 
 @pytest.fixture
@@ -76,7 +80,9 @@ def mock_config_file(mocker, temp_config_file):
     def _setup_config(content):
         with open(temp_config_file, "w") as f:
             f.write(content)
-        return mocker.patch("nscb.find_config_file", return_value=temp_config_file)
+        return mocker.patch(
+            "nscb.ConfigManager.find_config_file", return_value=temp_config_file
+        )
 
     return _setup_config
 
@@ -84,7 +90,7 @@ def mock_config_file(mocker, temp_config_file):
 @pytest.fixture
 def mock_is_gamescope_active(mocker):
     """Fixture to mock is_gamescope_active function."""
-    return mocker.patch("nscb.is_gamescope_active")
+    return mocker.patch("nscb.SystemDetector.is_gamescope_active")
 
 
 @pytest.fixture
@@ -92,7 +98,9 @@ def mock_env_commands(mocker):
     """Fixture to mock environment commands."""
 
     def _setup_env(pre="", post=""):
-        return mocker.patch("nscb.get_env_commands", return_value=(pre, post))
+        return mocker.patch(
+            "nscb.CommandExecutor.get_env_commands", return_value=(pre, post)
+        )
 
     return _setup_env
 
