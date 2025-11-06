@@ -1,15 +1,14 @@
 #!/usr/bin/python3
 
+import logging
 import os
 import selectors
 import shlex
 import subprocess
 import sys
-import logging
 from functools import reduce
 from pathlib import Path
 from typing import Dict, List, Optional, TextIO, Tuple, cast
-
 
 GAMESCOPE_ARGS_MAP = {
     "-W": "--output-width",
