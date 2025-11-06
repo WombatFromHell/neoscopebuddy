@@ -270,8 +270,64 @@ The `merge_arguments` function implements the following logic:
 - Validates executable paths before execution
 - Sanitizes user input from config files
 
+### Testing Approach
+
+The application follows a comprehensive testing strategy with multiple levels:
+
+#### Unit Tests (`test_units.py`)
+
+- Focus on individual function behavior
+- Test core utilities like argument parsing, configuration loading, and argument merging
+- Use mocking extensively to isolate functionality
+- Validate edge cases and error conditions for each component
+- Marked with `@pytest.mark.unit` decorator
+
+#### Integration Tests (`test_integrations.py`)
+
+- Test component interactions and workflows
+- Cover complete scenarios including config loading, profile merging, and command execution
+- Validate environment variable handling and command building
+- Test error handling in execution paths
+- Marked with `@pytest.mark.integration` decorator
+
+#### End-to-End Tests (`test_e2e.py`)
+
+- Simulate real user workflows from command parsing to execution
+- Test complete profile execution with temporary config files
+- Validate override functionality and separator handling
+- Cover error conditions in real execution environments
+- Marked with `@pytest.mark.e2e` decorator
+
+#### Test Infrastructure (`conftest.py`)
+
+- Provides common fixtures for mocking system components
+- Defines `SystemExitCalled` exception to handle sys.exit in tests
+- Offers parameterized testing fixtures for complex scenarios
+- Includes utilities for temporary file management
+
+#### Testing Categories
+
+The test suite covers these key areas:
+
+1. **Profile System**: Testing argument merging, conflict resolution, and multiple profile scenarios
+2. **Configuration Management**: Loading, parsing, and handling of various config file formats
+3. **Argument Processing**: Parsing, separation, canonicalization, and precedence rules
+4. **Execution Flow**: Command building, environment variable handling, and subprocess execution
+5. **Error Handling**: Missing executables, configuration files, profiles, and permissions
+6. **System Detection**: Gamescope active state detection and environment variable checks
+
+#### Testing Tools and Practices
+
+- Uses `pytest-mock` (mocker fixture) for dependency isolation, replacing `unittest.mock`
+- Leverages `pytest` framework for test organization and execution
+- Implements parameterized testing for multiple scenarios
+- Follows AAA (Arrange-Act-Assert) pattern for test structure
+- Uses temporary files for realistic file I/O testing
+- Mocks system calls and environment variables for consistent test execution
+
 ### Extension Points
 
 - Can add new gamescope argument mappings to `GAMESCOPE_ARGS_MAP`
 - The merging logic can accommodate new conflict patterns
 - Environment hook system allows for pre/post execution customization
+- Testing framework supports new test categories and scenarios
