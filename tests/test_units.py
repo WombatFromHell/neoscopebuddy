@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -792,3 +793,398 @@ class TestExecuteGamescopeCommand:
         assert "gamescope" in call_args
         assert "mygame.exe" in call_args
         assert result == 0  # Should return exit code
+
+    def test_build_inactive_gamescope_command_with_ld_preload(self, mocker):
+        # Test that LD_PRELOAD is properly handled when gamescope is not active
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Test with LD_PRELOAD environment variable
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_inactive_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # Check that the command includes the proper LD_PRELOAD handling
+            assert "env -u LD_PRELOAD gamescope" in result
+            assert "LD_PRELOAD=" in result  # Should contain LD_PRELOAD assignment
+            assert "mygame.exe" in result
+            assert "arg1" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            else:
+                os.environ.pop("LD_PRELOAD", None)
+
+    def test_build_inactive_gamescope_command_without_ld_preload(self, mocker):
+        # Test when there's no LD_PRELOAD environment variable
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Test without LD_PRELOAD environment variable
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        if "LD_PRELOAD" in os.environ:
+            del os.environ["LD_PRELOAD"]
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_inactive_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # Should NOT use env -u LD_PRELOAD when LD_PRELOAD is not originally set
+            assert "env -u LD_PRELOAD gamescope" not in result
+            assert "gamescope -f --" in result  # Basic check for the expected format
+            assert "mygame.exe" in result
+            assert "arg1" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+
+    def test_build_active_gamescope_command_with_ld_preload(self, mocker):
+        # Test LD_PRELOAD handling when gamescope is already active
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Test with LD_PRELOAD environment variable
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_active_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # When already in gamescope, should preserve LD_PRELOAD for the app
+            assert "LD_PRELOAD=" in result  # Should contain LD_PRELOAD assignment
+            assert "mygame.exe" in result
+            assert "arg1" in result
+            assert "gamescope" not in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            else:
+                os.environ.pop("LD_PRELOAD", None)
+
+    def test_build_active_gamescope_command_without_ld_preload(self, mocker):
+        # Test when gamescope is active and no LD_PRELOAD variable
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        if "LD_PRELOAD" in os.environ:
+            del os.environ["LD_PRELOAD"]
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_active_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # When no LD_PRELOAD, should just execute the app without env wrapper
+            assert "env LD_PRELOAD" not in result
+            assert "mygame.exe" in result
+            assert "arg1" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+
+    def test_execute_gamescope_command_with_ld_preload(self, mocker):
+        # Test full execution flow with LD_PRELOAD
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        mocker.patch("nscb.SystemDetector.is_gamescope_active", return_value=False)
+        mock_run = mocker.patch("nscb.CommandExecutor.run_nonblocking", return_value=0)
+
+        from nscb import CommandExecutor
+
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+        try:
+            final_args = ["-f", "--", "mygame.exe"]
+            result = CommandExecutor.execute_gamescope_command(final_args)
+
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+            assert "env -u LD_PRELOAD gamescope" in call_args
+            assert "LD_PRELOAD=" in call_args  # Should contain LD_PRELOAD assignment
+            assert "mygame.exe" in call_args
+            assert result == 0
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            else:
+                os.environ.pop("LD_PRELOAD", None)
+
+    def test_should_disable_ld_preload_wrap(self, mocker):
+        from nscb import EnvironmentHelper
+
+        # Test truthy values
+        truthy_values = ["1", "true", "yes", "on", "TRUE", "YES", "ON"]
+        for value in truthy_values:
+            mocker.patch.dict("os.environ", {"NSCB_DISABLE_LD_PRELOAD_WRAP": value})
+            assert EnvironmentHelper.should_disable_ld_preload_wrap() is True
+
+        # Test falsy values
+        falsy_values = ["0", "false", "no", "off", "other_value", ""]
+        for value in falsy_values:
+            mocker.patch.dict("os.environ", {"NSCB_DISABLE_LD_PRELOAD_WRAP": value})
+            assert EnvironmentHelper.should_disable_ld_preload_wrap() is False
+
+        # Test when variable is not set
+        mocker.patch.dict("os.environ", {}, clear=True)
+        assert EnvironmentHelper.should_disable_ld_preload_wrap() is False
+
+    def test_should_disable_ld_preload_wrap_with_faugus_log(self, mocker):
+        from nscb import EnvironmentHelper
+
+        # Save original environment
+        original_faugus_log = os.environ.get("FAUGUS_LOG")
+        original_disable_flag = os.environ.get("NSCB_DISABLE_LD_PRELOAD_WRAP")
+
+        try:
+            # Test that LD_PRELOAD wrapping is disabled when FAUGUS_LOG is set
+            os.environ["FAUGUS_LOG"] = "/path/to/log"
+            assert EnvironmentHelper.should_disable_ld_preload_wrap() is True
+
+            # Test that LD_PRELOAD wrapping is still disabled with a different FAUGUS_LOG value
+            os.environ["FAUGUS_LOG"] = "some_value"
+            assert EnvironmentHelper.should_disable_ld_preload_wrap() is True
+
+            # Clear FAUGUS_LOG and test with other variables
+            if "FAUGUS_LOG" in os.environ:
+                del os.environ["FAUGUS_LOG"]
+            os.environ["OTHER_VAR"] = "value"
+            assert EnvironmentHelper.should_disable_ld_preload_wrap() is False
+
+            # Test that FAUGUS_LOG takes precedence over NSCB_DISABLE_LD_PRELOAD_WRAP being falsy
+            os.environ["FAUGUS_LOG"] = "/path/to/log"
+            os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = "0"
+            assert EnvironmentHelper.should_disable_ld_preload_wrap() is True
+
+            # Test with FAUGUS_LOG present but NSCB_DISABLE_LD_PRELOAD_WRAP as truthy (both should disable)
+            os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = "1"
+            assert EnvironmentHelper.should_disable_ld_preload_wrap() is True
+
+        finally:
+            # Restore original environment
+            if original_faugus_log is not None:
+                os.environ["FAUGUS_LOG"] = original_faugus_log
+            elif "FAUGUS_LOG" in os.environ:
+                del os.environ["FAUGUS_LOG"]
+            
+            if original_disable_flag is not None:
+                os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = original_disable_flag
+            elif "NSCB_DISABLE_LD_PRELOAD_WRAP" in os.environ:
+                del os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"]
+
+    def test_build_inactive_gamescope_command_with_disabled_ld_preload_wrap(
+        self, mocker
+    ):
+        # Test that LD_PRELOAD wrapping is disabled when NSCB_DISABLE_LD_PRELOAD_WRAP is set
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Set up environment with both LD_PRELOAD and the disable flag
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+        original_disable_flag = os.environ.get("NSCB_DISABLE_LD_PRELOAD_WRAP")
+        os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = "1"
+
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_inactive_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # When LD_PRELOAD wrapping is disabled, should NOT use env -u LD_PRELOAD
+            assert "env -u LD_PRELOAD gamescope" not in result
+            assert "gamescope -f --" in result  # Basic check for the expected format
+            assert "mygame.exe" in result
+            assert "arg1" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            elif "LD_PRELOAD" in os.environ:
+                del os.environ["LD_PRELOAD"]
+
+            # Restore original disable flag
+            if original_disable_flag is not None:
+                os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = original_disable_flag
+            elif "NSCB_DISABLE_LD_PRELOAD_WRAP" in os.environ:
+                del os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"]
+
+    def test_build_inactive_gamescope_command_with_enabled_ld_preload_wrap_different_values(
+        self, mocker
+    ):
+        # Test that LD_PRELOAD wrapping works normally when NSCB_DISABLE_LD_PRELOAD_WRAP is set to falsy values
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Set up environment with LD_PRELOAD
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+
+        falsy_values = ["0", "false", "no", "off", "other_value", ""]
+        for value in falsy_values:
+            # Set the disable flag to a falsy value
+            os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = value
+            try:
+                args = ["-f", "--", "mygame.exe", "arg1"]
+                pre_cmd, post_cmd = "", ""
+
+                result = CommandExecutor._build_inactive_gamescope_command(
+                    args, pre_cmd, post_cmd
+                )
+
+                # When LD_PRELOAD wrapping is not disabled (falsy value), should use env -u LD_PRELOAD
+                assert "env -u LD_PRELOAD gamescope" in result
+                assert (
+                    "LD_PRELOAD=" in result
+                )  # Should contain LD_PRELOAD assignment for app
+                assert "mygame.exe" in result
+                assert "arg1" in result
+            finally:
+                # Only remove the disable flag we just set, don't remove LD_PRELOAD
+                if "NSCB_DISABLE_LD_PRELOAD_WRAP" in os.environ:
+                    del os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"]
+
+        # Restore original LD_PRELOAD value at the end if needed
+        if original_ld_preload is not None:
+            os.environ["LD_PRELOAD"] = original_ld_preload
+        elif "LD_PRELOAD" in os.environ:
+            del os.environ["LD_PRELOAD"]
+
+    def test_build_inactive_gamescope_command_with_faugus_log(
+        self, mocker
+    ):
+        # Test that LD_PRELOAD wrapping is disabled when FAUGUS_LOG is set
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Set up environment with LD_PRELOAD and FAUGUS_LOG
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+        original_faugus_log = os.environ.get("FAUGUS_LOG")
+        os.environ["FAUGUS_LOG"] = "/path/to/log"
+
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_inactive_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # When LD_PRELOAD wrapping is disabled via FAUGUS_LOG, should NOT use env -u LD_PRELOAD
+            assert "env -u LD_PRELOAD gamescope" not in result
+            assert "gamescope -f --" in result  # Basic check for the expected format
+            assert "mygame.exe" in result
+            assert "arg1" in result
+            # Should not contain LD_PRELOAD assignment for the app since wrapping is disabled
+            assert "LD_PRELOAD=" not in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            elif "LD_PRELOAD" in os.environ:
+                del os.environ["LD_PRELOAD"]
+
+            # Restore original FAUGUS_LOG value
+            if original_faugus_log is not None:
+                os.environ["FAUGUS_LOG"] = original_faugus_log
+            elif "FAUGUS_LOG" in os.environ:
+                del os.environ["FAUGUS_LOG"]
+
+    def test_build_active_gamescope_command_with_disabled_ld_preload_wrap(self, mocker):
+        # Test that LD_PRELOAD wrapping is disabled when NSCB_DISABLE_LD_PRELOAD_WRAP is set in active mode
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Set up environment with both LD_PRELOAD and the disable flag
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+        original_disable_flag = os.environ.get("NSCB_DISABLE_LD_PRELOAD_WRAP")
+        os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = "1"
+
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_active_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # When LD_PRELOAD wrapping is disabled and gamescope is active, should NOT wrap with LD_PRELOAD
+            assert (
+                "LD_PRELOAD=" not in result
+            )  # Should NOT contain LD_PRELOAD assignment
+            assert "mygame.exe" in result
+            assert "arg1" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            elif "LD_PRELOAD" in os.environ:
+                del os.environ["LD_PRELOAD"]
+
+            # Restore original disable flag
+            if original_disable_flag is not None:
+                os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = original_disable_flag
+            elif "NSCB_DISABLE_LD_PRELOAD_WRAP" in os.environ:
+                del os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"]
+
+    def test_build_active_gamescope_command_with_faugus_log(self, mocker):
+        # Test that LD_PRELOAD wrapping is disabled when FAUGUS_LOG is set in active mode
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Set up environment with both LD_PRELOAD and FAUGUS_LOG
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/path/to/library.so"
+        original_faugus_log = os.environ.get("FAUGUS_LOG")
+        os.environ["FAUGUS_LOG"] = "/path/to/log"
+
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_active_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # When LD_PRELOAD wrapping is disabled via FAUGUS_LOG and gamescope is active, 
+            # should NOT wrap with LD_PRELOAD
+            assert (
+                "LD_PRELOAD=" not in result
+            )  # Should NOT contain LD_PRELOAD assignment
+            assert "mygame.exe" in result
+            assert "arg1" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            elif "LD_PRELOAD" in os.environ:
+                del os.environ["LD_PRELOAD"]
+
+            # Restore original FAUGUS_LOG value
+            if original_faugus_log is not None:
+                os.environ["FAUGUS_LOG"] = original_faugus_log
+            elif "FAUGUS_LOG" in os.environ:
+                del os.environ["FAUGUS_LOG"]

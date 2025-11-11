@@ -46,3 +46,10 @@ Is the same as:
 ```bash
 gamescope -f -W 1280 -H 720 -- /usr/bin/someapp
 ```
+
+## Environment Variables
+
+- `NSCB_PRE_CMD`/`NSCB_PRECMD`: Command to run before gamescope/app execution
+- `NSCB_POST_CMD`/`NSCB_POSTCMD`: Command to run after gamescope/app execution
+- `NSCB_DISABLE_LD_PRELOAD_WRAP`: When set to a truthy value ("1", "true", "yes", "on"), this environment variable disables the LD_PRELOAD wrapping functionality
+- `FAUGUS_LOG`: When this environment variable is set (indicating launch via faugus-launcher), LD_PRELOAD wrapping is automatically disabled without requiring the NSCB_DISABLE_LD_PRELOAD_WRAP override

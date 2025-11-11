@@ -70,6 +70,7 @@ graph TB
 - `build_app_command`: Internal helper that quotes application arguments using shlex.quote to prevent command injection
 - `_build_inactive_gamescope_command`: Builds command when gamescope is not active
 - `_build_active_gamescope_command`: Builds command when gamescope is already active
+- **LD_PRELOAD Handling**: When gamescope is not active, properly handles LD_PRELOAD by using `env -u LD_PRELOAD gamescope` to prevent gamescope from interfering with the application's LD_PRELOAD, and when the application is executed, wraps it with `env LD_PRELOAD="$LD_PRELOAD"` to preserve the original LD_PRELOAD value
 
 #### System Detector (`SystemDetector`)
 
@@ -174,6 +175,22 @@ nscb.py -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
 - `NSCB_PRE_CMD` / `NSCB_PRECMD`: Command to run before gamescope/app execution
 - `NSCB_POST_CMD` / `NSCB_POSTCMD`: Command to run after gamescope/app execution (new names take precedence over legacy names)
 
+### LD_PRELOAD Handling
+
+- `LD_PRELOAD`: When present, nscb.py properly handles this environment variable to prevent gamescope from interfering with the application's library loading
+  - When LD_PRELOAD is set and gamescope is not active: `env -u LD_PRELOAD gamescope <flags> -- env LD_PRELOAD="$LD_PRELOAD" <executable with args>`
+  - When LD_PRELOAD is not set and gamescope is not active: `gamescope <flags> -- <executable with args>` (no env wrappers needed)
+  - When gamescope is already active: `env LD_PRELOAD="$LD_PRELOAD" <executable with args>` if LD_PRELOAD was originally set, otherwise `<executable with args>` (preserving original LD_PRELOAD for the application when present)
+
+### LD_PRELOAD Override
+
+- `NSCB_DISABLE_LD_PRELOAD_WRAP`: When set to a truthy value ("1", "true", "yes", "on"), this environment variable disables the LD_PRELOAD wrapping functionality, allowing the application to inherit the LD_PRELOAD environment variable without gamescope's intervention
+  - When NSCB_DISABLE_LD_PRELOAD_WRAP is set to a truthy value, LD_PRELOAD is not stripped for gamescope or preserved for the application
+  - This allows for direct control of LD_PRELOAD behavior in special circumstances where the default wrapping is undesirable
+- `FAUGUS_LOG`: When this environment variable is set (indicating launch via faugus-launcher), LD_PRELOAD wrapping is automatically disabled without requiring the NSCB_DISABLE_LD_PRELOAD_WRAP override
+  - When FAUGUS_LOG is present, LD_PRELOAD is not stripped for gamescope or preserved for the application
+  - This provides automatic compatibility with faugus-launcher without user intervention
+
 ### System Detection
 
 - `XDG_CURRENT_DESKTOP`: Used to detect if already running under gamescope
@@ -250,6 +267,7 @@ The application follows this data flow:
 4. **Execution Preparation**:
    - Gamescope active status is checked using `SystemDetector.is_gamescope_active`
    - Environment commands are retrieved using `CommandExecutor.get_env_commands`
+   - LD_PRELOAD environment variable is checked to preserve it for the application when appropriate
    - Final command is built using `CommandExecutor.build_command`
 
 5. **Execution**:
@@ -330,6 +348,9 @@ The codebase defines the following type aliases for better readability:
 ### Security Considerations
 
 - Uses `shlex.quote()` for command construction to prevent injection
+- Properly handles LD_PRELOAD to prevent gamescope from interfering with application's library loading
+- When LD_PRELOAD is present, uses `env -u LD_PRELOAD` for gamescope and preserves it for the application using `env LD_PRELOAD="$LD_PRELOAD"`
+- When LD_PRELOAD is not present, skips the env wrappers for efficiency and cleaner command output
 - Validates executable paths before execution using `PathHelper`
 - Sanitizes user input from config files
 - Implements proper exception handling with custom exception classes:
