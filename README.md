@@ -2,11 +2,17 @@
 
 NeoScopebuddy is a thin wrapper around the gamescope utility, just like its competitor scopebuddy, except it supports a critical extra feature: profiles!
 
-Profiles are defined in `$HOME/.config/nscb.conf` using simple `KEY=VALUE` lines, and called via `-p <name>` or `--profile <name>`:
+Profiles are defined in `$HOME/.config/nscb.conf` using simple `KEY=VALUE` lines, and called via `-p <name>` or `--profile <name>`.
+The config file also supports exporting environment variables using `export VAR_NAME=value` syntax:
 
 ```ini
+# Profile definitions
 someapp=-f -W 1280 -H 720
 someotherapp=-b -W 1920 -H 1080
+
+# Environment variable exports
+export PROTON_ENABLE_FSR4=1
+export MANGOHUD=1
 ```
 
 ## Example usage
@@ -46,6 +52,12 @@ Is the same as:
 ```bash
 gamescope -f -W 1280 -H 720 -- /usr/bin/someapp
 ```
+
+## Configuration File Variables
+
+In addition to profiles, you can define environment variables in your config file:
+
+- `export VAR_NAME=value`: Sets environment variables that will be available to the application
 
 ## Environment Variables
 

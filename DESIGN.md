@@ -54,7 +54,7 @@ graph TB
 #### Configuration Manager (`ConfigManager`)
 
 - `find_config_file`: Locates config at `$XDG_CONFIG_HOME/nscb.conf` or `$HOME/.config/nscb.conf`
-- `load_config`: Parses KEY=VALUE format with support for quoted values and comments
+- `load_config`: Parses KEY=VALUE format for profiles and `export VAR_NAME=value` format for environment variables, with support for quoted values and comments
 
 #### Argument Processor (`ArgumentProcessor`)
 
@@ -89,9 +89,9 @@ graph TB
 
 ### Configuration Format
 
-- Config file uses `KEY=VALUE` format
-- Keys represent profile names
-- Values are space-separated gamescope arguments
+- Config file uses `KEY=VALUE` format for profiles and `export VAR_NAME=value` format for environment variables
+- Profile keys represent profile names, values are space-separated gamescope arguments
+- Export keys represent environment variable names, values are the variable values
 - Supports quoted values and comments (lines starting with #)
 - Quoted values have their quotes stripped during parsing
 - Empty lines and lines without equals signs are ignored
@@ -102,6 +102,9 @@ graph TB
   streaming=--borderless -W 1280 -H 720
   # This is a comment
   portable="--fsr-sharpness 5 --framerate-limit 60"
+  export DISPLAY=:0
+  export MANGOHUD=1
+  export CUSTOM_VAR="value with spaces"
   ```
 
 ## Configuration and Argument System
@@ -257,7 +260,7 @@ The application follows this data flow:
 
 2. **Configuration Loading**:
    - Config file is located using `ConfigManager.find_config_file`
-   - Profile arguments are loaded from config using `ConfigManager.load_config`
+   - Profile arguments and exported environment variables are loaded from config using `ConfigManager.load_config`
 
 3. **Argument Merging**:
    - Profile arguments and override arguments are merged using `ProfileManager.merge_arguments`
@@ -268,6 +271,7 @@ The application follows this data flow:
    - Gamescope active status is checked using `SystemDetector.is_gamescope_active`
    - Environment commands are retrieved using `CommandExecutor.get_env_commands`
    - LD_PRELOAD environment variable is checked to preserve it for the application when appropriate
+   - Exported environment variables from config are applied to the execution environment
    - Final command is built using `CommandExecutor.build_command`
 
 5. **Execution**:
@@ -342,8 +346,10 @@ The codebase defines the following type aliases for better readability:
 - `FlagTuple = tuple[str, str | None]`: Tuple representing a flag and its optional value
 - `ProfileArgs = dict[str, str]`: Dictionary mapping profile names to arguments
 - `ConfigData = dict[str, str]`: Dictionary representing configuration data
+- `EnvExports = dict[str, str]`: Dictionary mapping environment variable names to values
 - `ExitCode = int`: Integer representing exit codes
 - `ProfileArgsList = list[ArgsList]`: List of argument lists for multiple profiles
+- `ConfigResult`: Class that holds both profiles and exported environment variables
 
 ### Security Considerations
 

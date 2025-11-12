@@ -10,13 +10,60 @@ from functools import reduce
 from pathlib import Path
 from typing import TextIO, cast
 
+
+def debug_log(message: str) -> None:
+    """Log debug message when NSCB_DEBUG=1 is set."""
+    if os.environ.get("NSCB_DEBUG", "").lower() in ("1", "true", "yes", "on"):
+        print(f"[DEBUG] {message}", file=sys.stderr, flush=True)
+
+
 # Type aliases at the top of the file for readability
 ArgsList = list[str]
 FlagTuple = tuple[str, str | None]
 ProfileArgs = dict[str, str]
 ConfigData = dict[str, str]
+EnvExports = dict[str, str]
 ExitCode = int
 ProfileArgsList = list[ArgsList]
+
+
+class ConfigResult:
+    """Class to hold both profile configurations and environment exports."""
+
+    def __init__(self, profiles: ConfigData, exports: EnvExports):
+        self.profiles = profiles
+        self.exports = exports
+
+    def __contains__(self, key):
+        """Allow checking if a profile exists using 'in' operator."""
+        return key in self.profiles
+
+    def __getitem__(self, key):
+        """Allow dictionary-style access to profiles."""
+        return self.profiles[key]
+
+    def __eq__(self, other):
+        """Allow comparison with dictionary (for backward compatibility with tests)."""
+        if isinstance(other, dict):
+            return self.profiles == other
+        return super().__eq__(other)
+
+    def get(self, key, default=None):
+        """Allow .get() method access to profiles."""
+        return self.profiles.get(key, default)
+
+    def keys(self):
+        """Allow access to profile keys."""
+        return self.profiles.keys()
+
+    def values(self):
+        """Allow access to profile values."""
+        return self.profiles.values()
+
+    def items(self):
+        """Allow access to profile items."""
+        return self.profiles.items()
+
 
 GAMESCOPE_ARGS_MAP = {
     "-W": "--output-width",
@@ -133,13 +180,28 @@ class EnvironmentHelper:
     def should_disable_ld_preload_wrap() -> bool:
         """Check if LD_PRELOAD wrapping should be disabled."""
         disable_var = os.environ.get("NSCB_DISABLE_LD_PRELOAD_WRAP", "").lower()
+        faugus_log = os.environ.get("FAUGUS_LOG")
+
+        debug_log(
+            f"should_disable_ld_preload_wrap: NSCB_DISABLE_LD_PRELOAD_WRAP={disable_var}"
+        )
+        debug_log(f"should_disable_ld_preload_wrap: FAUGUS_LOG={faugus_log}")
+
         if disable_var in ("1", "true", "yes", "on"):
+            debug_log(
+                "should_disable_ld_preload_wrap: LD_PRELOAD wrapping disabled via NSCB_DISABLE_LD_PRELOAD_WRAP"
+            )
             return True
-        
+        #
         # Automatically disable LD_PRELOAD wrapping when launched with faugus-launcher
         # by checking for the FAUGUS_LOG environment variable
-        faugus_log = os.environ.get("FAUGUS_LOG")
-        return faugus_log is not None
+        if faugus_log is not None:
+            debug_log(
+                "should_disable_ld_preload_wrap: LD_PRELOAD wrapping disabled via FAUGUS_LOG (faugus-launcher detected)"
+            )
+            return True
+        debug_log("should_disable_ld_preload_wrap: LD_PRELOAD wrapping is enabled")
+        return False
 
 
 class ProfileManager:
@@ -288,9 +350,11 @@ class ConfigManager:
         return PathHelper.get_config_path()
 
     @staticmethod
-    def load_config(config_file: Path) -> ConfigData:
-        """Load configuration from file as dictionary."""
-        config: ConfigData = {}
+    def load_config(config_file: Path) -> ConfigResult:
+        """Load configuration from file including both profiles and environment exports."""
+        profiles: ConfigData = {}
+        exports: EnvExports = {}
+
         with open(config_file, "r") as f:
             for line in f:
                 if not line.strip() or line.startswith("#"):
@@ -300,9 +364,20 @@ class ConfigManager:
                 if "=" not in line:
                     continue
 
-                key, value = line.split("=", 1)
-                config[key.strip()] = value.strip().strip("\"'")
-        return config
+                # Check if this is an export statement
+                line = line.strip()
+                if line.startswith("export "):
+                    # Parse export VAR_NAME=value
+                    export_part = line[7:]  # Remove "export " prefix
+                    if "=" in export_part:
+                        key, value = export_part.split("=", 1)
+                        exports[key.strip()] = value.strip().strip("\"'")
+                else:
+                    # Regular profile definition
+                    key, value = line.split("=", 1)
+                    profiles[key.strip()] = value.strip().strip("\"'")
+
+        return ConfigResult(profiles, exports)
 
 
 class ArgumentProcessor:
@@ -400,20 +475,36 @@ class CommandExecutor:
         return "; ".join(filtered_parts)
 
     @staticmethod
-    def execute_gamescope_command(final_args: ArgsList) -> ExitCode:
+    def execute_gamescope_command(
+        final_args: ArgsList, exports: EnvExports | None = None
+    ) -> ExitCode:
         """Execute gamescope command with proper handling and return exit code."""
-        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
+        debug_log(
+            f"execute_gamescope_command: final_args={final_args}, exports={exports}"
+        )
 
-        if SystemDetector.is_gamescope_active():
+        if exports is None:
+            exports = {}
+
+        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
+        debug_log(f"execute_gamescope_command: pre_cmd={pre_cmd}, post_cmd={post_cmd}")
+
+        gamescope_active = SystemDetector.is_gamescope_active()
+        debug_log(f"execute_gamescope_command: gamescope is active: {gamescope_active}")
+
+        if gamescope_active:
             command = CommandExecutor._build_active_gamescope_command(
-                final_args, pre_cmd, post_cmd
+                final_args, pre_cmd, post_cmd, exports
             )
         else:
             command = CommandExecutor._build_inactive_gamescope_command(
-                final_args, pre_cmd, post_cmd
+                final_args, pre_cmd, post_cmd, exports
             )
 
+        debug_log(f"execute_gamescope_command: built command: {command}")
+
         if not command:
+            debug_log("execute_gamescope_command: no command to execute, returning 0")
             return 0
 
         print("Executing:", command)
@@ -421,28 +512,57 @@ class CommandExecutor:
 
     @staticmethod
     def _build_inactive_gamescope_command(
-        args: ArgsList, pre_cmd: str, post_cmd: str
+        args: ArgsList, pre_cmd: str, post_cmd: str, exports: EnvExports | None = None
     ) -> str:
         """Build command when gamescope is not active."""
+        debug_log(f"_build_inactive_gamescope_command: args={args}")
+        debug_log(
+            f"_build_inactive_gamescope_command: pre_cmd={pre_cmd}, post_cmd={post_cmd}"
+        )
+
+        if exports is None:
+            exports = {}
+
         # Check if LD_PRELOAD wrapping should be disabled
         disable_ld_preload_wrap = EnvironmentHelper.should_disable_ld_preload_wrap()
+        debug_log(
+            f"_build_inactive_gamescope_command: LD_PRELOAD wrapping disabled: {disable_ld_preload_wrap}"
+        )
+
         # Check if LD_PRELOAD is set in the environment
-        has_ld_preload = "LD_PRELOAD" in os.environ and not disable_ld_preload_wrap
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        debug_log(
+            f"_build_inactive_gamescope_command: Original LD_PRELOAD value: {original_ld_preload}"
+        )
+
+        has_ld_preload = original_ld_preload and not disable_ld_preload_wrap
+        debug_log(
+            f"_build_inactive_gamescope_command: LD_PRELOAD will be handled: {has_ld_preload}"
+        )
 
         # Process the args to handle the -- separator properly
         try:
             dash_index = args.index("--")
             gamescope_args = args[:dash_index]
             app_args = args[dash_index + 1 :]
+            debug_log(
+                f"_build_inactive_gamescope_command: gamescope_args={gamescope_args}, app_args={app_args}"
+            )
 
             # Build gamescope command - only use env -u LD_PRELOAD if LD_PRELOAD is set and not disabled
             if has_ld_preload:
                 gamescope_cmd = CommandExecutor._build_app_command(
                     ["env", "-u", "LD_PRELOAD", "gamescope"] + gamescope_args
                 )
+                debug_log(
+                    f"_build_inactive_gamescope_command: gamescope command with LD_PRELOAD stripped: {gamescope_cmd}"
+                )
             else:
                 gamescope_cmd = CommandExecutor._build_app_command(
                     ["gamescope"] + gamescope_args
+                )
+                debug_log(
+                    f"_build_inactive_gamescope_command: gamescope command without LD_PRELOAD handling: {gamescope_cmd}"
                 )
 
             # Build app command - only wrap with LD_PRELOAD if it was originally set and not disabled
@@ -454,36 +574,92 @@ class CommandExecutor:
                     f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
                 ] + app_args
                 final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
+                debug_log(
+                    f"_build_inactive_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
+                )
             else:
                 final_app_cmd = CommandExecutor._build_app_command(app_args)
+                debug_log(
+                    f"_build_inactive_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
+                )
+
+            # Apply exports to the app command
+            if exports:
+                # Create export commands for each environment variable
+                export_prefix = " ".join(
+                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
+                )
+                final_app_cmd = f"{export_prefix} {final_app_cmd}".strip()
 
             # Combine with the -- separator
             full_cmd = f"{gamescope_cmd} -- {final_app_cmd}"
+            debug_log(f"_build_inactive_gamescope_command: full command: {full_cmd}")
         except ValueError:
             # If no -- separator found, just run gamescope appropriately
+            debug_log("_build_inactive_gamescope_command: no '--' separator found")
             if has_ld_preload:
                 gamescope_cmd = CommandExecutor._build_app_command(
                     ["env", "-u", "LD_PRELOAD", "gamescope"] + args
                 )
+                debug_log(
+                    f"_build_inactive_gamescope_command: gamescope-only command with LD_PRELOAD stripped: {gamescope_cmd}"
+                )
             else:
                 gamescope_cmd = CommandExecutor._build_app_command(["gamescope"] + args)
-            full_cmd = gamescope_cmd
+                debug_log(
+                    f"_build_inactive_gamescope_command: gamescope-only command without LD_PRELOAD handling: {gamescope_cmd}"
+                )
 
-        return CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
+            # Apply exports to the command if there are no app args but there are exports
+            if exports:
+                # Create export commands for each environment variable
+                export_prefix = " ".join(
+                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
+                )
+                full_cmd = f"{export_prefix} {gamescope_cmd}".strip()
+            else:
+                full_cmd = gamescope_cmd
+
+        final_command = CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
+        debug_log(
+            f"_build_inactive_gamescope_command: final built command: {final_command}"
+        )
+        return final_command
 
     @staticmethod
     def _build_active_gamescope_command(
-        args: ArgsList, pre_cmd: str, post_cmd: str
+        args: ArgsList, pre_cmd: str, post_cmd: str, exports: EnvExports | None = None
     ) -> str:
         """Build command when gamescope is already active."""
+        debug_log(f"_build_active_gamescope_command: args={args}")
+        debug_log(
+            f"_build_active_gamescope_command: pre_cmd={pre_cmd}, post_cmd={post_cmd}"
+        )
+
+        if exports is None:
+            exports = {}
+
         # Check if LD_PRELOAD wrapping should be disabled
         disable_ld_preload_wrap = EnvironmentHelper.should_disable_ld_preload_wrap()
+        debug_log(
+            f"_build_active_gamescope_command: LD_PRELOAD wrapping disabled: {disable_ld_preload_wrap}"
+        )
+
         # Check if LD_PRELOAD is set in the environment
-        has_ld_preload = "LD_PRELOAD" in os.environ and not disable_ld_preload_wrap
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        debug_log(
+            f"_build_active_gamescope_command: Original LD_PRELOAD value: {original_ld_preload}"
+        )
+
+        has_ld_preload = original_ld_preload and not disable_ld_preload_wrap
+        debug_log(
+            f"_build_active_gamescope_command: LD_PRELOAD will be handled: {has_ld_preload}"
+        )
 
         try:
             dash_index = args.index("--")
             app_args = args[dash_index + 1 :]
+            debug_log(f"_build_active_gamescope_command: app_args={app_args}")
 
             # Build app command, preserving LD_PRELOAD for the application if it exists and not disabled
             if has_ld_preload:
@@ -495,20 +671,70 @@ class CommandExecutor:
                     f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
                 ] + app_args
                 final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
+                debug_log(
+                    f"_build_active_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
+                )
             else:
                 final_app_cmd = CommandExecutor._build_app_command(app_args)
+                debug_log(
+                    f"_build_active_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
+                )
+
+            # Apply exports to the app command
+            if exports:
+                # Create export commands for each environment variable
+                export_prefix = " ".join(
+                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
+                )
+                final_app_cmd = f"{export_prefix} {final_app_cmd}".strip()
 
             # If pre_cmd and post_cmd are both empty, just execute the app args directly
             if not pre_cmd and not post_cmd:
+                debug_log(
+                    "_build_active_gamescope_command: no pre/post commands, returning app command directly"
+                )
                 return final_app_cmd
             else:
-                return CommandExecutor.build_command([pre_cmd, final_app_cmd, post_cmd])
+                final_command = CommandExecutor.build_command(
+                    [pre_cmd, final_app_cmd, post_cmd]
+                )
+                debug_log(
+                    f"_build_active_gamescope_command: final built command: {final_command}"
+                )
+                return final_command
         except ValueError:
             # If no -- separator found but we have pre/post commands, use those
-            if not pre_cmd and not post_cmd:
+            debug_log("_build_active_gamescope_command: no '--' separator found")
+            # Build command with exports if there are exports but no app args
+            if exports:
+                export_prefix = " ".join(
+                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
+                )
+                if not pre_cmd and not post_cmd:
+                    # If no pre/post commands, just run exports and exit
+                    debug_log(
+                        "_build_active_gamescope_command: no pre/post commands but have exports, returning export command"
+                    )
+                    return export_prefix
+                else:
+                    final_command = CommandExecutor.build_command(
+                        [pre_cmd, export_prefix, post_cmd]
+                    )
+                    debug_log(
+                        f"_build_active_gamescope_command: final built command (with exports, no app args): {final_command}"
+                    )
+                    return final_command
+            elif not pre_cmd and not post_cmd:
+                debug_log(
+                    "_build_active_gamescope_command: no pre/post commands and no app args, returning empty string"
+                )
                 return ""
             else:
-                return CommandExecutor.build_command([pre_cmd, post_cmd])
+                final_command = CommandExecutor.build_command([pre_cmd, post_cmd])
+                debug_log(
+                    f"_build_active_gamescope_command: final built command (no app args): {final_command}"
+                )
+                return final_command
 
     @staticmethod
     def _build_app_command(args: ArgsList) -> str:
@@ -580,28 +806,34 @@ class Application:
 
         # Process profiles if any
         if profiles:
-            final_args = self._process_profiles(profiles, remaining_args)
+            final_args, exports = self._process_profiles(profiles, remaining_args)
         else:
             final_args = remaining_args
+            exports = {}
 
         # Execute the command
-        return self.command_executor.execute_gamescope_command(final_args)
+        return self.command_executor.execute_gamescope_command(final_args, exports)
 
-    def _process_profiles(self, profiles: ArgsList, args: ArgsList) -> ArgsList:
-        """Process profiles and merge with arguments."""
+    def _process_profiles(
+        self, profiles: ArgsList, args: ArgsList
+    ) -> tuple[ArgsList, EnvExports]:
+        """Process profiles and merge with arguments, returning both arguments and exports."""
         config_file = self.config_manager.find_config_file()
         if not config_file:
             raise ConfigNotFoundError("could not find nscb.conf")
 
-        config = self.config_manager.load_config(config_file)
+        config_result = self.config_manager.load_config(config_file)
         merged_profiles = []
 
         for profile in profiles:
-            if profile not in config:
+            if profile not in config_result.profiles:
                 raise ProfileNotFoundError(f"profile {profile} not found")
-            merged_profiles.append(shlex.split(config[profile]))
+            merged_profiles.append(shlex.split(config_result.profiles[profile]))
 
-        return self.profile_manager.merge_multiple_profiles(merged_profiles + [args])
+        final_args = self.profile_manager.merge_multiple_profiles(
+            merged_profiles + [args]
+        )
+        return final_args, config_result.exports
 
 
 def main() -> ExitCode:

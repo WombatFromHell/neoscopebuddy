@@ -502,7 +502,60 @@ class TestLoadConfig:
         content = "gaming=-f -W 1920 -H 1080\n=\n=empty_key\nvalid=value\n"
         config_path = temp_config_with_content(content)
         result = ConfigManager.load_config(config_path)
-        assert isinstance(result, dict)
+        # Should return a ConfigResult which has dict-like behavior for profiles
+        assert hasattr(result, "profiles") and isinstance(result.profiles, dict)
+
+    @pytest.mark.parametrize(
+        "content,expected_profiles,expected_exports",
+        [
+            # Basic export functionality
+            (
+                "export SOME_VAR=value\ngaming=-f",
+                {"gaming": "-f"},
+                {"SOME_VAR": "value"},
+            ),
+            # Multiple exports
+            (
+                "export VAR1=value1\nexport VAR2=value2\ngaming=-f",
+                {"gaming": "-f"},
+                {"VAR1": "value1", "VAR2": "value2"},
+            ),
+            # Export with quotes
+            (
+                'export QUOTED_VAR="quoted value here"\nstreaming=--borderless',
+                {"streaming": "--borderless"},
+                {"QUOTED_VAR": "quoted value here"},
+            ),
+            # Mixed profiles and exports
+            (
+                "gaming=-f -W 1920\nexport DISPLAY=:0\nstreaming=--borderless\nexport WAYLAND_DISPLAY=wayland-0",
+                {"gaming": "-f -W 1920", "streaming": "--borderless"},
+                {"DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0"},
+            ),
+            # Export only config (no profiles)
+            (
+                "export ONLY_VAR=value\nexport ANOTHER_VAR=test",
+                {},
+                {"ONLY_VAR": "value", "ANOTHER_VAR": "test"},
+            ),
+            # Profile only config (no exports)
+            (
+                "gaming=-f\nstreaming=--borderless",
+                {"gaming": "-f", "streaming": "--borderless"},
+                {},
+            ),
+            # Empty config with exports
+            ("export EMPTY_VAR=", {}, {"EMPTY_VAR": ""}),
+        ],
+    )
+    def test_load_config_with_exports(
+        self, temp_config_with_content, content, expected_profiles, expected_exports
+    ):
+        """Test loading config with export statements."""
+        config_path = temp_config_with_content(content)
+        result = ConfigManager.load_config(config_path)
+        assert result.profiles == expected_profiles
+        assert result.exports == expected_exports
 
 
 class TestSplitAtSeparator:
@@ -849,6 +902,35 @@ class TestExecuteGamescopeCommand:
             if original_ld_preload is not None:
                 os.environ["LD_PRELOAD"] = original_ld_preload
 
+    def test_build_inactive_gamescope_command_with_empty_ld_preload(self, mocker):
+        # Test when LD_PRELOAD is set to an empty string
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Test with LD_PRELOAD environment variable set to empty string
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = ""
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_inactive_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # Should NOT use env -u LD_PRELOAD when LD_PRELOAD is empty
+            assert "env -u LD_PRELOAD gamescope" not in result
+            assert "gamescope -f --" in result  # Basic check for the expected format
+            assert "mygame.exe" in result
+            assert "arg1" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            else:
+                if "LD_PRELOAD" in os.environ:
+                    del os.environ["LD_PRELOAD"]
+
     def test_build_active_gamescope_command_with_ld_preload(self, mocker):
         # Test LD_PRELOAD handling when gamescope is already active
         mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
@@ -876,6 +958,37 @@ class TestExecuteGamescopeCommand:
                 os.environ["LD_PRELOAD"] = original_ld_preload
             else:
                 os.environ.pop("LD_PRELOAD", None)
+
+    def test_build_active_gamescope_command_with_empty_ld_preload(self, mocker):
+        # Test LD_PRELOAD handling when gamescope is already active and LD_PRELOAD is empty
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        # Test with LD_PRELOAD environment variable set to empty string
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = ""
+        try:
+            args = ["-f", "--", "mygame.exe", "arg1"]
+            pre_cmd, post_cmd = "", ""
+
+            result = CommandExecutor._build_active_gamescope_command(
+                args, pre_cmd, post_cmd
+            )
+
+            # When LD_PRELOAD is empty, should not wrap with LD_PRELOAD
+            assert (
+                "LD_PRELOAD=" not in result
+            )  # Should NOT contain LD_PRELOAD assignment
+            assert "mygame.exe" in result
+            assert "arg1" in result
+            assert "gamescope" not in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            else:
+                if "LD_PRELOAD" in os.environ:
+                    del os.environ["LD_PRELOAD"]
 
     def test_build_active_gamescope_command_without_ld_preload(self, mocker):
         # Test when gamescope is active and no LD_PRELOAD variable
@@ -985,7 +1098,7 @@ class TestExecuteGamescopeCommand:
                 os.environ["FAUGUS_LOG"] = original_faugus_log
             elif "FAUGUS_LOG" in os.environ:
                 del os.environ["FAUGUS_LOG"]
-            
+
             if original_disable_flag is not None:
                 os.environ["NSCB_DISABLE_LD_PRELOAD_WRAP"] = original_disable_flag
             elif "NSCB_DISABLE_LD_PRELOAD_WRAP" in os.environ:
@@ -1071,9 +1184,7 @@ class TestExecuteGamescopeCommand:
         elif "LD_PRELOAD" in os.environ:
             del os.environ["LD_PRELOAD"]
 
-    def test_build_inactive_gamescope_command_with_faugus_log(
-        self, mocker
-    ):
+    def test_build_inactive_gamescope_command_with_faugus_log(self, mocker):
         # Test that LD_PRELOAD wrapping is disabled when FAUGUS_LOG is set
         mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
         from nscb import CommandExecutor
@@ -1169,7 +1280,7 @@ class TestExecuteGamescopeCommand:
                 args, pre_cmd, post_cmd
             )
 
-            # When LD_PRELOAD wrapping is disabled via FAUGUS_LOG and gamescope is active, 
+            # When LD_PRELOAD wrapping is disabled via FAUGUS_LOG and gamescope is active,
             # should NOT wrap with LD_PRELOAD
             assert (
                 "LD_PRELOAD=" not in result
