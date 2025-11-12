@@ -200,7 +200,6 @@ class EnvironmentHelper:
                 "should_disable_ld_preload_wrap: LD_PRELOAD wrapping disabled via FAUGUS_LOG (faugus-launcher detected)"
             )
             return True
-        debug_log("should_disable_ld_preload_wrap: LD_PRELOAD wrapping is enabled")
         return False
 
 
@@ -487,7 +486,6 @@ class CommandExecutor:
             exports = {}
 
         pre_cmd, post_cmd = CommandExecutor.get_env_commands()
-        debug_log(f"execute_gamescope_command: pre_cmd={pre_cmd}, post_cmd={post_cmd}")
 
         gamescope_active = SystemDetector.is_gamescope_active()
         debug_log(f"execute_gamescope_command: gamescope is active: {gamescope_active}")
@@ -515,10 +513,6 @@ class CommandExecutor:
         args: ArgsList, pre_cmd: str, post_cmd: str, exports: EnvExports | None = None
     ) -> str:
         """Build command when gamescope is not active."""
-        debug_log(f"_build_inactive_gamescope_command: args={args}")
-        debug_log(
-            f"_build_inactive_gamescope_command: pre_cmd={pre_cmd}, post_cmd={post_cmd}"
-        )
 
         if exports is None:
             exports = {}
@@ -554,15 +548,9 @@ class CommandExecutor:
                 gamescope_cmd = CommandExecutor._build_app_command(
                     ["env", "-u", "LD_PRELOAD", "gamescope"] + gamescope_args
                 )
-                debug_log(
-                    f"_build_inactive_gamescope_command: gamescope command with LD_PRELOAD stripped: {gamescope_cmd}"
-                )
             else:
                 gamescope_cmd = CommandExecutor._build_app_command(
                     ["gamescope"] + gamescope_args
-                )
-                debug_log(
-                    f"_build_inactive_gamescope_command: gamescope command without LD_PRELOAD handling: {gamescope_cmd}"
                 )
 
             # Apply exports to the app command using env prefix
@@ -596,37 +584,21 @@ class CommandExecutor:
                         f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
                     ] + app_args
                     final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
-                    debug_log(
-                        f"_build_inactive_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
-                    )
                 else:
                     # No exports and no LD_PRELOAD, just build the app command
                     final_app_cmd = CommandExecutor._build_app_command(app_args)
-                    debug_log(
-                        f"_build_inactive_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
-                    )
 
             # Combine with the -- separator
             full_cmd = f"{gamescope_cmd} -- {final_app_cmd}"
             final_command = CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
-            debug_log(
-                f"_build_inactive_gamescope_command: final built command: {final_command}"
-            )
         except ValueError:
             # If no -- separator found, just run gamescope appropriately
-            debug_log("_build_inactive_gamescope_command: no '--' separator found")
             if has_ld_preload:
                 gamescope_cmd = CommandExecutor._build_app_command(
                     ["env", "-u", "LD_PRELOAD", "gamescope"] + args
                 )
-                debug_log(
-                    f"_build_inactive_gamescope_command: gamescope-only command with LD_PRELOAD stripped: {gamescope_cmd}"
-                )
             else:
                 gamescope_cmd = CommandExecutor._build_app_command(["gamescope"] + args)
-                debug_log(
-                    f"_build_inactive_gamescope_command: gamescope-only command without LD_PRELOAD handling: {gamescope_cmd}"
-                )
 
             # Apply exports to the command if there are no app args but there are exports
             if exports:
@@ -645,9 +617,6 @@ class CommandExecutor:
                 final_command = CommandExecutor.build_command(
                     [pre_cmd, gamescope_cmd, post_cmd]
                 )
-        debug_log(
-            f"_build_inactive_gamescope_command: final built command: {final_command}"
-        )
         return final_command
 
     @staticmethod
@@ -655,10 +624,6 @@ class CommandExecutor:
         args: ArgsList, pre_cmd: str, post_cmd: str, exports: EnvExports | None = None
     ) -> str:
         """Build command when gamescope is already active."""
-        debug_log(f"_build_active_gamescope_command: args={args}")
-        debug_log(
-            f"_build_active_gamescope_command: pre_cmd={pre_cmd}, post_cmd={post_cmd}"
-        )
 
         if exports is None:
             exports = {}
@@ -717,32 +682,19 @@ class CommandExecutor:
                         f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
                     ] + app_args
                     final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
-                    debug_log(
-                        f"_build_active_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
-                    )
                 else:
                     final_app_cmd = CommandExecutor._build_app_command(app_args)
-                    debug_log(
-                        f"_build_active_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
-                    )
 
             # If pre_cmd and post_cmd are both empty, just execute the app args directly
             if not pre_cmd and not post_cmd:
-                debug_log(
-                    "_build_active_gamescope_command: no pre/post commands, returning app command directly"
-                )
                 return final_app_cmd
             else:
                 final_command = CommandExecutor.build_command(
                     [pre_cmd, final_app_cmd, post_cmd]
                 )
-                debug_log(
-                    f"_build_active_gamescope_command: final built command: {final_command}"
-                )
                 return final_command
         except ValueError:
             # If no -- separator found but we have pre/post commands, use those
-            debug_log("_build_active_gamescope_command: no '--' separator found")
             # Build command with exports if there are exports but no app args
             if exports:
                 # Create env command for exports
@@ -752,28 +704,16 @@ class CommandExecutor:
                 export_cmd = CommandExecutor._build_app_command(env_cmd_parts)
                 if not pre_cmd and not post_cmd:
                     # If no pre/post commands, just run exports and exit
-                    debug_log(
-                        "_build_active_gamescope_command: no pre/post commands but have exports, returning export command"
-                    )
                     return export_cmd
                 else:
                     final_command = CommandExecutor.build_command(
                         [pre_cmd, export_cmd, post_cmd]
                     )
-                    debug_log(
-                        f"_build_active_gamescope_command: final built command (with exports, no app args): {final_command}"
-                    )
                     return final_command
             elif not pre_cmd and not post_cmd:
-                debug_log(
-                    "_build_active_gamescope_command: no pre/post commands and no app args, returning empty string"
-                )
                 return ""
             else:
                 final_command = CommandExecutor.build_command([pre_cmd, post_cmd])
-                debug_log(
-                    f"_build_active_gamescope_command: final built command (no app args): {final_command}"
-                )
                 return final_command
 
     @staticmethod
