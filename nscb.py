@@ -507,7 +507,7 @@ class CommandExecutor:
             debug_log("execute_gamescope_command: no command to execute, returning 0")
             return 0
 
-        print("Executing:", command)
+        print("Executing:", command, flush=True)
         return CommandExecutor.run_nonblocking(command)
 
     @staticmethod
