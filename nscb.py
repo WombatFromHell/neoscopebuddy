@@ -583,17 +583,40 @@ class CommandExecutor:
                     f"_build_inactive_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
                 )
 
-            # Apply exports to the app command
+            # Apply exports to the app command using env prefix
             if exports:
-                # Create export commands for each environment variable
-                export_prefix = " ".join(
-                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
-                )
-                final_app_cmd = f"{export_prefix} {final_app_cmd}".strip()
+                # Add exports as env prefix to the app command
+                env_prefix = ["env"] + [
+                    f"{k}={shlex.quote(v)}" for k, v in exports.items()
+                ]
+                if has_ld_preload:
+                    # If LD_PRELOAD is also being handled, combine both prefixes
+                    ld_preload_value = os.environ.get("LD_PRELOAD", "")
+                    # Create the full env command with both exports and LD_PRELOAD
+                    final_app_cmd_parts = (
+                        env_prefix
+                        + [
+                            "env",
+                            f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
+                        ]
+                        + app_args
+                    )
+                    final_app_cmd = CommandExecutor._build_app_command(
+                        final_app_cmd_parts
+                    )
+                else:
+                    # Just add export env prefix to app_args
+                    final_app_cmd_parts = env_prefix + app_args
+                    final_app_cmd = CommandExecutor._build_app_command(
+                        final_app_cmd_parts
+                    )
 
             # Combine with the -- separator
             full_cmd = f"{gamescope_cmd} -- {final_app_cmd}"
-            debug_log(f"_build_inactive_gamescope_command: full command: {full_cmd}")
+            final_command = CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
+            debug_log(
+                f"_build_inactive_gamescope_command: final built command: {final_command}"
+            )
         except ValueError:
             # If no -- separator found, just run gamescope appropriately
             debug_log("_build_inactive_gamescope_command: no '--' separator found")
@@ -612,15 +635,21 @@ class CommandExecutor:
 
             # Apply exports to the command if there are no app args but there are exports
             if exports:
-                # Create export commands for each environment variable
-                export_prefix = " ".join(
-                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
+                # Create env command to execute exports (this is for when there are no app args but exports exist)
+                # We run the exports as a separate command since there's no app to prefix
+                env_cmd = (
+                    ["env"]
+                    + [f"{k}={shlex.quote(v)}" for k, v in exports.items()]
+                    + ["true"]
                 )
-                full_cmd = f"{export_prefix} {gamescope_cmd}".strip()
+                export_cmd = CommandExecutor._build_app_command(env_cmd)
+                final_command = CommandExecutor.build_command(
+                    [pre_cmd, export_cmd, gamescope_cmd, post_cmd]
+                )
             else:
-                full_cmd = gamescope_cmd
-
-        final_command = CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
+                final_command = CommandExecutor.build_command(
+                    [pre_cmd, gamescope_cmd, post_cmd]
+                )
         debug_log(
             f"_build_inactive_gamescope_command: final built command: {final_command}"
         )
@@ -680,13 +709,33 @@ class CommandExecutor:
                     f"_build_active_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
                 )
 
-            # Apply exports to the app command
+            # Apply exports to the app command using env prefix
             if exports:
-                # Create export commands for each environment variable
-                export_prefix = " ".join(
-                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
-                )
-                final_app_cmd = f"{export_prefix} {final_app_cmd}".strip()
+                # Add exports as env prefix to the app command
+                env_prefix = ["env"] + [
+                    f"{k}={shlex.quote(v)}" for k, v in exports.items()
+                ]
+                if has_ld_preload:
+                    # If LD_PRELOAD is also being handled, combine both prefixes
+                    ld_preload_value = os.environ.get("LD_PRELOAD", "")
+                    # Create the full env command with both exports and LD_PRELOAD
+                    final_app_cmd_parts = (
+                        env_prefix
+                        + [
+                            "env",
+                            f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
+                        ]
+                        + app_args
+                    )
+                    final_app_cmd = CommandExecutor._build_app_command(
+                        final_app_cmd_parts
+                    )
+                else:
+                    # Just add export env prefix to app_args
+                    final_app_cmd_parts = env_prefix + app_args
+                    final_app_cmd = CommandExecutor._build_app_command(
+                        final_app_cmd_parts
+                    )
 
             # If pre_cmd and post_cmd are both empty, just execute the app args directly
             if not pre_cmd and not post_cmd:
@@ -707,18 +756,20 @@ class CommandExecutor:
             debug_log("_build_active_gamescope_command: no '--' separator found")
             # Build command with exports if there are exports but no app args
             if exports:
-                export_prefix = " ".join(
-                    [f"export {k}={shlex.quote(v)};" for k, v in exports.items()]
-                )
+                # Create env command for exports
+                env_cmd_parts = ["env"] + [
+                    f"{k}={shlex.quote(v)}" for k, v in exports.items()
+                ]
+                export_cmd = CommandExecutor._build_app_command(env_cmd_parts)
                 if not pre_cmd and not post_cmd:
                     # If no pre/post commands, just run exports and exit
                     debug_log(
                         "_build_active_gamescope_command: no pre/post commands but have exports, returning export command"
                     )
-                    return export_prefix
+                    return export_cmd
                 else:
                     final_command = CommandExecutor.build_command(
-                        [pre_cmd, export_prefix, post_cmd]
+                        [pre_cmd, export_cmd, post_cmd]
                     )
                     debug_log(
                         f"_build_active_gamescope_command: final built command (with exports, no app args): {final_command}"
