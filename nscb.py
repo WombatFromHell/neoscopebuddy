@@ -565,24 +565,6 @@ class CommandExecutor:
                     f"_build_inactive_gamescope_command: gamescope command without LD_PRELOAD handling: {gamescope_cmd}"
                 )
 
-            # Build app command - only wrap with LD_PRELOAD if it was originally set and not disabled
-            if has_ld_preload:
-                ld_preload_value = os.environ.get("LD_PRELOAD", "")
-                # Wrap app in env LD_PRELOAD="..." to preserve the original LD_PRELOAD
-                app_cmd_parts = [
-                    "env",
-                    f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
-                ] + app_args
-                final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
-                debug_log(
-                    f"_build_inactive_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
-                )
-            else:
-                final_app_cmd = CommandExecutor._build_app_command(app_args)
-                debug_log(
-                    f"_build_inactive_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
-                )
-
             # Apply exports to the app command using env prefix
             if exports:
                 # Add exports as env prefix to the app command
@@ -590,17 +572,11 @@ class CommandExecutor:
                     f"{k}={shlex.quote(v)}" for k, v in exports.items()
                 ]
                 if has_ld_preload:
-                    # If LD_PRELOAD is also being handled, combine both prefixes
+                    # If LD_PRELOAD is also being handled, combine both into a single env command
                     ld_preload_value = os.environ.get("LD_PRELOAD", "")
-                    # Create the full env command with both exports and LD_PRELOAD
-                    final_app_cmd_parts = (
-                        env_prefix
-                        + [
-                            "env",
-                            f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
-                        ]
-                        + app_args
-                    )
+                    # Add LD_PRELOAD to the same env command to avoid nesting
+                    env_prefix.append(f"LD_PRELOAD={shlex.quote(ld_preload_value)}")
+                    final_app_cmd_parts = env_prefix + app_args
                     final_app_cmd = CommandExecutor._build_app_command(
                         final_app_cmd_parts
                     )
@@ -609,6 +585,25 @@ class CommandExecutor:
                     final_app_cmd_parts = env_prefix + app_args
                     final_app_cmd = CommandExecutor._build_app_command(
                         final_app_cmd_parts
+                    )
+            else:
+                # No exports, but might still have LD_PRELOAD
+                if has_ld_preload:
+                    # Wrap app in env LD_PRELOAD="..." to preserve the original LD_PRELOAD
+                    ld_preload_value = os.environ.get("LD_PRELOAD", "")
+                    app_cmd_parts = [
+                        "env",
+                        f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
+                    ] + app_args
+                    final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
+                    debug_log(
+                        f"_build_inactive_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
+                    )
+                else:
+                    # No exports and no LD_PRELOAD, just build the app command
+                    final_app_cmd = CommandExecutor._build_app_command(app_args)
+                    debug_log(
+                        f"_build_inactive_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
                     )
 
             # Combine with the -- separator
@@ -690,25 +685,6 @@ class CommandExecutor:
             app_args = args[dash_index + 1 :]
             debug_log(f"_build_active_gamescope_command: app_args={app_args}")
 
-            # Build app command, preserving LD_PRELOAD for the application if it exists and not disabled
-            if has_ld_preload:
-                # Use shlex.quote to properly handle the LD_PRELOAD value
-                ld_preload_value = os.environ.get("LD_PRELOAD", "")
-                # Wrap app in env LD_PRELOAD="..." to preserve the original LD_PRELOAD
-                app_cmd_parts = [
-                    "env",
-                    f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
-                ] + app_args
-                final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
-                debug_log(
-                    f"_build_active_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
-                )
-            else:
-                final_app_cmd = CommandExecutor._build_app_command(app_args)
-                debug_log(
-                    f"_build_active_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
-                )
-
             # Apply exports to the app command using env prefix
             if exports:
                 # Add exports as env prefix to the app command
@@ -716,17 +692,11 @@ class CommandExecutor:
                     f"{k}={shlex.quote(v)}" for k, v in exports.items()
                 ]
                 if has_ld_preload:
-                    # If LD_PRELOAD is also being handled, combine both prefixes
+                    # If LD_PRELOAD is also being handled, combine both into a single env command
                     ld_preload_value = os.environ.get("LD_PRELOAD", "")
-                    # Create the full env command with both exports and LD_PRELOAD
-                    final_app_cmd_parts = (
-                        env_prefix
-                        + [
-                            "env",
-                            f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
-                        ]
-                        + app_args
-                    )
+                    # Add LD_PRELOAD to the same env command to avoid nesting
+                    env_prefix.append(f"LD_PRELOAD={shlex.quote(ld_preload_value)}")
+                    final_app_cmd_parts = env_prefix + app_args
                     final_app_cmd = CommandExecutor._build_app_command(
                         final_app_cmd_parts
                     )
@@ -735,6 +705,25 @@ class CommandExecutor:
                     final_app_cmd_parts = env_prefix + app_args
                     final_app_cmd = CommandExecutor._build_app_command(
                         final_app_cmd_parts
+                    )
+            else:
+                # If no exports but LD_PRELOAD exists, still need to handle LD_PRELOAD
+                if has_ld_preload:
+                    # Use shlex.quote to properly handle the LD_PRELOAD value
+                    ld_preload_value = os.environ.get("LD_PRELOAD", "")
+                    # Wrap app in env LD_PRELOAD="..." to preserve the original LD_PRELOAD
+                    app_cmd_parts = [
+                        "env",
+                        f"LD_PRELOAD={shlex.quote(ld_preload_value)}",
+                    ] + app_args
+                    final_app_cmd = CommandExecutor._build_app_command(app_cmd_parts)
+                    debug_log(
+                        f"_build_active_gamescope_command: app command with preserved LD_PRELOAD: {final_app_cmd}"
+                    )
+                else:
+                    final_app_cmd = CommandExecutor._build_app_command(app_args)
+                    debug_log(
+                        f"_build_active_gamescope_command: app command without LD_PRELOAD preservation: {final_app_cmd}"
                     )
 
             # If pre_cmd and post_cmd are both empty, just execute the app args directly

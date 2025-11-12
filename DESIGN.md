@@ -70,7 +70,7 @@ graph TB
 - `build_app_command`: Internal helper that quotes application arguments using shlex.quote to prevent command injection
 - `_build_inactive_gamescope_command`: Builds command when gamescope is not active
 - `_build_active_gamescope_command`: Builds command when gamescope is already active
-- **LD_PRELOAD Handling**: When gamescope is not active, properly handles LD_PRELOAD by using `env -u LD_PRELOAD gamescope` to prevent gamescope from interfering with the application's LD_PRELOAD, and when the application is executed, wraps it with `env LD_PRELOAD="$LD_PRELOAD"` to preserve the original LD_PRELOAD value
+- **LD_PRELOAD Handling**: When gamescope is not active, properly handles LD_PRELOAD by using `env -u LD_PRELOAD gamescope` to prevent gamescope from interfering with the application's LD_PRELOAD, and when the application is executed, preserves it for the application. When both exported environment variables and LD_PRELOAD are present, combines them into a single `env` command to avoid nested `env` commands (e.g., `env EXPORT1=value1 LD_PRELOAD="$LD_PRELOAD" <app with args>` instead of `env EXPORT1=value1 env LD_PRELOAD=... <app with args>`)
 
 #### System Detector (`SystemDetector`)
 
@@ -184,6 +184,7 @@ nscb.py -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
   - When LD_PRELOAD is set and gamescope is not active: `env -u LD_PRELOAD gamescope <flags> -- env LD_PRELOAD="$LD_PRELOAD" <executable with args>`
   - When LD_PRELOAD is not set and gamescope is not active: `gamescope <flags> -- <executable with args>` (no env wrappers needed)
   - When gamescope is already active: `env LD_PRELOAD="$LD_PRELOAD" <executable with args>` if LD_PRELOAD was originally set, otherwise `<executable with args>` (preserving original LD_PRELOAD for the application when present)
+  - When both exported environment variables and LD_PRELOAD are present, they are combined into a single `env` command to avoid nested `env` commands
 
 ### LD_PRELOAD Override
 
@@ -356,6 +357,7 @@ The codebase defines the following type aliases for better readability:
 - Uses `shlex.quote()` for command construction to prevent injection
 - Properly handles LD_PRELOAD to prevent gamescope from interfering with application's library loading
 - When LD_PRELOAD is present, uses `env -u LD_PRELOAD` for gamescope and preserves it for the application using `env LD_PRELOAD="$LD_PRELOAD"`
+- When both exported environment variables and LD_PRELOAD are present, combines them into a single `env` command to avoid nested `env` commands
 - When LD_PRELOAD is not present, skips the env wrappers for efficiency and cleaner command output
 - Validates executable paths before execution using `PathHelper`
 - Sanitizes user input from config files

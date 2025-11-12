@@ -1299,3 +1299,87 @@ class TestExecuteGamescopeCommand:
                 os.environ["FAUGUS_LOG"] = original_faugus_log
             elif "FAUGUS_LOG" in os.environ:
                 del os.environ["FAUGUS_LOG"]
+
+    def _test_combined_env_command_structure(
+        self, mocker, build_command_func, args, pre_cmd, post_cmd
+    ):
+        """
+        Helper method to test that exports and LD_PRELOAD are combined into a single env command,
+        preventing nested env commands.
+        """
+        from nscb import EnvExports
+
+        # Test with both exports and LD_PRELOAD environment variable
+        original_ld_preload = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = "/usr/lib/test.so"
+        try:
+            exports: EnvExports = {"PROTON_ENABLE_FSR4": "1", "PROTON_ENABLE_HDR": "1"}
+
+            result = build_command_func(args, pre_cmd, post_cmd, exports)
+
+            # Verify that the command contains both exports and LD_PRELOAD
+            assert "PROTON_ENABLE_FSR4=1" in result
+            assert "PROTON_ENABLE_HDR=1" in result
+            assert "LD_PRELOAD=" in result
+
+            # Most importantly, verify there are no nested env commands
+            # Look for the pattern where an env command is followed by another env command
+            parts = result.split()
+            env_positions = [i for i, part in enumerate(parts) if part == "env"]
+
+            # Check for consecutive env commands (nested env commands)
+            nested_env_found = False
+            for i, pos in enumerate(env_positions):
+                if i < len(env_positions) - 1 and env_positions[i + 1] == pos + 1:
+                    nested_env_found = True
+                    break
+
+            assert not nested_env_found, f"Found nested env commands in: {result}"
+
+            # Verify that LD_PRELOAD and the export variables appear in the same env command
+            assert "env PROTON_ENABLE_FSR4=1 PROTON_ENABLE_HDR=1 LD_PRELOAD=" in result
+        finally:
+            # Restore original LD_PRELOAD value
+            if original_ld_preload is not None:
+                os.environ["LD_PRELOAD"] = original_ld_preload
+            elif "LD_PRELOAD" in os.environ:
+                del os.environ["LD_PRELOAD"]
+
+    def test_build_inactive_gamescope_command_with_exports_and_ld_preload_combined(
+        self, mocker
+    ):
+        # Test that when both exports and LD_PRELOAD are present, they are combined into a single env command
+        # This prevents nested env commands like "env VAR1=value1 env LD_PRELOAD=... app"
+        # Instead it should be "env VAR1=value1 LD_PRELOAD=... app"
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        args = ["-f", "--", "mygame.exe", "arg1"]
+        pre_cmd, post_cmd = "", ""
+
+        self._test_combined_env_command_structure(
+            mocker,
+            CommandExecutor._build_inactive_gamescope_command,
+            args,
+            pre_cmd,
+            post_cmd,
+        )
+
+    def test_build_active_gamescope_command_with_exports_and_ld_preload_combined(
+        self, mocker
+    ):
+        # Test that when both exports and LD_PRELOAD are present in active mode,
+        # they are combined into a single env command to prevent nested env commands
+        mocker.patch("nscb.CommandExecutor.get_env_commands", return_value=("", ""))
+        from nscb import CommandExecutor
+
+        args = ["-f", "--", "mygame.exe", "arg1"]
+        pre_cmd, post_cmd = "", ""
+
+        self._test_combined_env_command_structure(
+            mocker,
+            CommandExecutor._build_active_gamescope_command,
+            args,
+            pre_cmd,
+            post_cmd,
+        )
