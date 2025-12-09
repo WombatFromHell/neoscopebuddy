@@ -495,7 +495,7 @@ The application follows a comprehensive testing strategy with multiple levels:
 
 #### Testing Categories
 
-The test suite covers these key areas with 284+ tests:
+The test suite covers these key areas:
 
 1. **Profile System**: Testing argument merging, conflict resolution, and multiple profile scenarios
 2. **Configuration Management**: Loading, parsing, and handling of various config file formats including exports
