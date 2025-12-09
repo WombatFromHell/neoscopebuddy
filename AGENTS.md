@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Neoscope Buddy (`nscb.py`) is a Python-based gamescope wrapper that provides a profile-based configuration system for managing gamescope settings. It allows users to define reusable gamescope configurations in a config file and apply them via command-line arguments with support for overrides.
+Neoscope Buddy (`nscb.pyz`) is a Python-based gamescope wrapper that provides a profile-based configuration system for managing gamescope settings. It allows users to define reusable gamescope configurations in a config file and apply them via command-line arguments with support for overrides.
 
 ## Key Agentic Coding Information
 
@@ -28,10 +28,10 @@ Neoscope Buddy (`nscb.py`) is a Python-based gamescope wrapper that provides a p
 
 ### Project Tools
 
-- Run tests: `uv run pytest -v`
-- Code coverage: `uv run slipcover -m pytest -v`
-- Lint and format: `ruff check --select I --fix; ruff format; pyright`
-- Format markdown: `prettier --cache -c -w *.md`
+- Run our 'zipapp' bundler build: `make clean build`
+- Run tests and code coverage: `make test`
+- Run code complexity metrics `make radon`
+- Lint and format: `make quality`
 
 ## Development Guidelines
 

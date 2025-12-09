@@ -2,7 +2,7 @@
 
 ## System Overview
 
-NeoscopeBuddy (nscb.py) is a Python-based gamescope wrapper that provides a profile-based configuration system for managing gamescope settings. It enables users to define reusable gamescope configurations in a config file and apply them via command-line arguments with support for overrides.
+NeoscopeBuddy (nscb.pyz) is a Python-based gamescope wrapper that provides a profile-based configuration system for managing gamescope settings. It enables users to define reusable gamescope configurations in a config file and apply them via command-line arguments with support for overrides. The application is packaged as a zipapp for easy distribution and execution.
 
 ### Core Purpose
 
@@ -10,6 +10,7 @@ NeoscopeBuddy (nscb.py) is a Python-based gamescope wrapper that provides a prof
 - Enables profile-based configuration management
 - Handles argument merging with precedence rules
 - Supports environment hooks for pre/post command execution
+- Provides help functionality via `--help` flag
 
 ## Architecture and Components
 
@@ -17,30 +18,64 @@ NeoscopeBuddy (nscb.py) is a Python-based gamescope wrapper that provides a prof
 
 ```mermaid
 graph TB
-    A[main] --> A0[Application.run]
+    A[entry:main] --> A0[Application.run]
     A0 --> A1[ProfileManager.parse_profile_args]
-    A0 --> A2[PathHelper.get_config_path]
-    A0 --> A3[ConfigManager.load_config]
-    A0 --> A4[ProfileManager.merge_multiple_profiles]
-    A0 --> A5[CommandExecutor.execute_gamescope_command]
-    A4 --> A6[ProfileManager.merge_arguments]
-    A5 --> A7[EnvironmentHelper.is_gamescope_active]
-    A5 --> A8[EnvironmentHelper.get_pre_post_commands]
-    A5 --> A9[CommandExecutor.run_nonblocking]
-    A0 --> A10[PathHelper.executable_exists]
+    A0 --> A2[PathHelper.executable_exists]
+    A0 --> A3[Application._process_profiles]
+    A3 --> A4[ConfigManager.find_config_file]
+    A3 --> A5[ConfigManager.load_config]
+    A3 --> A6[ProfileManager.merge_multiple_profiles]
+    A0 --> A7[CommandExecutor.execute_gamescope_command]
+    A6 --> A8[ProfileManager.merge_arguments]
+    A7 --> A9[EnvironmentHelper.is_gamescope_active]
+    A7 --> A10[EnvironmentHelper.get_pre_post_commands]
+    A7 --> A11[CommandExecutor.run_nonblocking]
 ```
 
-#### Main Entry Point (`main`)
+#### Main Entry Point (`entry:main`)
 
-- Entry point for the application
-- Creates and runs the `Application` instance
+- Entry point for the application when packaged as zipapp
+- Located in `src/entry.py`
+- Calls the `main` function from `nscb.application`
 - Handles global exception handling and returns appropriate exit codes
+
+#### Application Main Function (`main`)
+
+- Located in `src/nscb/application.py`
+- Creates and runs the `Application` instance with command-line arguments
+- Includes exception handling for `NscbError` and general exceptions
+- Returns appropriate exit codes
+- Handles debug logging when `NSCB_DEBUG` environment variable is set
+
+#### Project Structure
+
+The application follows a modular architecture with the following directory structure:
+
+```
+src/
+├── entry.py          # Application entry point for zipapp packaging
+├── nscb/
+│   ├── __init__.py
+│   ├── application.py    # Main application orchestrator
+│   ├── profile_manager.py # Profile parsing and merging logic
+│   ├── config_manager.py  # Configuration loading and parsing
+│   ├── argument_processor.py # Argument parsing utilities
+│   ├── command_executor.py  # Command building and execution
+│   ├── system_detector.py   # System detection utilities
+│   ├── path_helper.py       # Path operations
+│   ├── environment_helper.py # Environment variable operations
+│   ├── gamescope_args.py    # Gamescope argument mappings
+│   ├── types.py             # Type definitions
+│   └── exceptions.py        # Custom exception classes
+```
 
 #### Application (`Application`)
 
 - Main orchestrator class that manages the entire workflow
 - Coordinates all other components
 - Handles dependency validation and execution flow
+- `_process_profiles`: Processes profile configurations, loads config, merges profiles, and returns both arguments and exported environment variables
+- `main`: Entry point function that creates Application instance and runs with command-line arguments, includes exception handling
 
 #### Profile Manager (`ProfileManager`)
 
@@ -50,11 +85,20 @@ graph TB
 - `_merge_flags`: Internal method to merge flags with conflict resolution
 - `_canon`: Converts flags to canonical form using `GAMESCOPE_ARGS_MAP`
 - `_flags_to_args_list`: Converts flag tuples to flat argument list
+- `_build_app_command`: Internal helper that builds application command from arguments with proper quoting
 
 #### Configuration Manager (`ConfigManager`)
 
 - `find_config_file`: Locates config at `$XDG_CONFIG_HOME/nscb.conf` or `$HOME/.config/nscb.conf`
 - `load_config`: Parses KEY=VALUE format for profiles and `export VAR_NAME=value` format for environment variables, with support for quoted values and comments
+- Returns `ConfigResult` object containing both profiles and environment exports
+
+#### Configuration Result (`ConfigResult`)
+
+- Class that holds both profile configurations and environment exports
+- Provides dictionary-style access to profiles
+- Supports backward compatibility with dictionary operations
+- Contains both `profiles` (profile configurations) and `exports` (environment variable exports)
 
 #### Argument Processor (`ArgumentProcessor`)
 
@@ -67,9 +111,9 @@ graph TB
 - `run_nonblocking`: Handles non-blocking I/O with real-time output forwarding using selectors for efficient I/O multiplexing
 - `get_env_commands`: Retrieves pre/post execution hooks from environment variables
 - `build_command`: Builds command string from parts with proper filtering, removing empty strings to avoid semicolon artifacts and joining with semicolons to execute multiple commands
-- `build_app_command`: Internal helper that quotes application arguments using shlex.quote to prevent command injection
-- `_build_inactive_gamescope_command`: Builds command when gamescope is not active
-- `_build_active_gamescope_command`: Builds command when gamescope is already active
+- `_build_app_command`: Internal helper that quotes application arguments using shlex.quote to prevent command injection
+- `_build_inactive_gamescope_command`: Builds command when gamescope is not active, handles LD_PRELOAD and environment variable exports appropriately
+- `_build_active_gamescope_command`: Builds command when gamescope is already active, handles LD_PRELOAD and environment variable exports appropriately
 - **LD_PRELOAD Handling**: When gamescope is not active, properly handles LD_PRELOAD by using `env -u LD_PRELOAD gamescope` to prevent gamescope from interfering with the application's LD_PRELOAD, and when the application is executed, preserves it for the application. When both exported environment variables and LD_PRELOAD are present, combines them into a single `env` command to avoid nested `env` commands (e.g., `env EXPORT1=value1 LD_PRELOAD="$LD_PRELOAD" <app with args>` instead of `env EXPORT1=value1 env LD_PRELOAD=... <app with args>`)
 
 #### System Detector (`SystemDetector`)
@@ -153,10 +197,17 @@ If a profile specifies `-f` (fullscreen) and an override specifies `--borderless
 
 ### Usage Patterns
 
+The application can be executed in multiple ways:
+
 ```
-nscb.py -p fullscreen -- /bin/mygame                 # Single profile
-nscb.py --profiles=profile1,profile2 -- /bin/mygame  # Multiple profiles
-nscb.py -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
+python3 -m nscb.pyz -p fullscreen -- /bin/mygame                 # Direct zipapp execution
+python3 -m nscb.pyz --profiles=profile1,profile2 -- /bin/mygame  # Multiple profiles
+python3 -m nscb.pyz -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
+
+# After installation via Makefile:
+nscb.pyz -p fullscreen -- /bin/mygame                 # Single profile
+nscb.pyz --profiles=profile1,profile2 -- /bin/mygame  # Multiple profiles
+nscb.pyz -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
 ```
 
 ### Profile Specification Options
@@ -165,6 +216,11 @@ nscb.py -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
 - `--profile=PROFILE`: Specify a single profile (equals format)
 - `--profiles=profile1,profile2,...`: Specify multiple profiles (comma-separated)
 - Command-line arguments after profile specifications override profile settings
+
+### Help and Debug Options
+
+- `--help`: Display usage information and exit
+- `NSCB_DEBUG=1`: Enable debug logging to stderr when set to truthy value ("1", "true", "yes", "on")
 
 ### Separator Usage
 
@@ -199,20 +255,50 @@ nscb.py -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
 
 - `XDG_CURRENT_DESKTOP`: Used to detect if already running under gamescope
 
+## Build System and Distribution
+
+The application uses a Makefile-based build system that packages the application as a zipapp for easy distribution:
+
+### Build Targets
+
+- `make build`: Creates the zipapp package (`dist/nscb.pyz`) using Python's zipapp module
+- `make install`: Installs the zipapp to `~/.local/bin` with a convenient symlink as `nscb`
+- `make clean`: Removes build artifacts and temporary files
+- `make all`: Runs clean, build, and install in sequence
+- `make test`: Runs the test suite using uv and pytest
+- `make quality`: Runs code quality checks (ruff and pyright)
+
+### Packaging Approach
+
+The application uses Python's zipapp module to create a single executable file from the modular source code:
+
+1. Source code from `src/nscb/` is copied to a staging directory
+2. Entry point file `src/entry.py` is added to the staging directory
+3. Zipapp creates a single executable file `dist/nscb.pyz` with the entry point `entry:main`
+4. The resulting file can be executed directly with Python: `python3 nscb.pyz`
+
 ## System Architecture
 
 ```mermaid
 graph TB
+    subgraph "Build System"
+        Makefile[Makefile]
+        Zipapp[Python zipapp]
+        Package[nscb.pyz]
+    end
+
     subgraph "User Interface Layer"
         CLI[Command Line Interface]
         Config[Configuration File]
     end
 
     subgraph "Core Processing Layer"
-        Main[Main Function]
+        Entry[entry:main]
+        MainFunc[main function]
         App[Application Class]
         ProfileManager[ProfileManager Class]
         ConfigManager[ConfigManager Class]
+        ConfigResult[ConfigResult Class]
         ArgProcessor[ArgumentProcessor Class]
         Merger[ProfileManager.merge_arguments]
         PathHelper[PathHelper Class]
@@ -231,11 +317,15 @@ graph TB
         Env[Environment Variables]
     end
 
-    CLI --> Main
-    Main --> App
+    Makefile --> Zipapp
+    Zipapp --> Package
+    CLI --> Entry
+    Entry --> MainFunc
+    MainFunc --> App
     Config --> ConfigManager
     App --> ProfileManager
     App --> ConfigManager
+    App --> ConfigResult
     App --> PathHelper
     App --> EnvHelper
     ProfileManager --> Merger
@@ -245,6 +335,7 @@ graph TB
     Executor --> Runner
     Executor --> Gamescope
     ProfileManager --> ArgProcessor
+    ConfigManager --> ConfigResult
     ConfigManager --> FS
     Executor --> Env
     App --> PathHelper
@@ -256,26 +347,26 @@ graph TB
 The application follows this data flow:
 
 1. **Input Parsing**:
-   - Command line arguments are parsed by `ProfileManager.parse_profile_args`
+   - Command line arguments are parsed by the `main` function which calls `Application.run`
+   - Profile specifications are extracted using `ProfileManager.parse_profile_args`
    - Profile specifications are extracted and remaining args are preserved
 
-2. **Configuration Loading**:
+2. **Profile Processing**:
+   - If profiles are specified, `Application._process_profiles` handles profile loading and processing
    - Config file is located using `ConfigManager.find_config_file`
    - Profile arguments and exported environment variables are loaded from config using `ConfigManager.load_config`
+   - Multiple profiles are merged using `ProfileManager.merge_multiple_profiles` with `shlex.split` to properly parse profile arguments
+   - Returns both final arguments and environment exports
 
-3. **Argument Merging**:
-   - Profile arguments and override arguments are merged using `ProfileManager.merge_arguments`
-   - Conflict resolution occurs during merging
-   - Multiple profiles are merged using `ProfileManager.merge_multiple_profiles`
-
-4. **Execution Preparation**:
+3. **Execution Preparation**:
    - Gamescope active status is checked using `SystemDetector.is_gamescope_active`
    - Environment commands are retrieved using `CommandExecutor.get_env_commands`
-   - LD_PRELOAD environment variable is checked to preserve it for the application when appropriate
+   - LD_PRELOAD environment variable and disable flags are checked to preserve it for the application when appropriate
    - Exported environment variables from config are applied to the execution environment
-   - Final command is built using `CommandExecutor.build_command`
+   - Final command is built using `CommandExecutor._build_inactive_gamescope_command` or `CommandExecutor._build_active_gamescope_command` depending on active status
+   - Command is assembled using `CommandExecutor.build_command` with pre/post commands
 
-5. **Execution**:
+4. **Execution**:
    - Command is executed with non-blocking I/O using `CommandExecutor.run_nonblocking`
    - Output is forwarded in real-time
 
@@ -284,7 +375,7 @@ The application follows this data flow:
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant M as main()
+    participant E as entry:main
     participant App as Application
     participant PM as ProfileManager
     participant CM as ConfigManager
@@ -293,17 +384,18 @@ sequenceDiagram
     participant CE as CommandExecutor
     participant SD as SystemDetector
 
-    U->>M: Execute nscb with profiles and args
-    M->>App: Application.run()
+    U->>E: Execute nscb.pyz with profiles and args
+    E->>App: Application.run()
     App->>PH: PathHelper.executable_exists()
     App->>PM: ProfileManager.parse_profile_args()
     PM->>App: Return profiles and remaining args
-    App->>PH: PathHelper.get_config_path()
-    PH->>App: Return config file path
+    App->>App: Application._process_profiles() if profiles exist
+    App->>CM: ConfigManager.find_config_file()
+    CM->>App: Return config file path
     App->>CM: ConfigManager.load_config()
-    CM->>App: Return config dictionary
+    CM->>App: Return ConfigResult with profiles and exports
     App->>PM: ProfileManager.merge_multiple_profiles()
-    PM->>App: Return merged arguments
+    PM->>App: Return merged arguments and exports
     App->>CE: CommandExecutor.execute_gamescope_command()
     CE->>EH: EnvironmentHelper.is_gamescope_active()
     EH->>CE: Return gamescope status
@@ -370,56 +462,81 @@ The codebase defines the following type aliases for better readability:
 
 The application follows a comprehensive testing strategy with multiple levels:
 
-#### Unit Tests (`test_units.py`)
+#### Unit Tests (`tests/test_*.py`)
 
-- Focus on individual function behavior
+- Focus on individual function behavior in specific test modules (e.g., `test_profile_manager.py`, `test_config_manager.py`)
 - Test core utilities like argument parsing, configuration loading, and argument merging
-- Use mocking extensively to isolate functionality
+- Use mocking extensively to isolate functionality with `pytest-mock`
 - Validate edge cases and error conditions for each component
 - Marked with `@pytest.mark.unit` decorator
 
-#### Integration Tests (`test_integrations.py`)
+#### Integration Tests (`tests/test_*.py`)
 
-- Test component interactions and workflows
+- Test component interactions and workflows across modules
 - Cover complete scenarios including config loading, profile merging, and command execution
-- Validate environment variable handling and command building
+- Validate environment variable handling and command building with real module integration
 - Test error handling in execution paths
 - Marked with `@pytest.mark.integration` decorator
 
-#### End-to-End Tests (`test_e2e.py`)
+#### End-to-End Tests (`tests/test_*.py`)
 
 - Simulate real user workflows from command parsing to execution
 - Test complete profile execution with temporary config files
-- Validate override functionality and separator handling
-- Cover error conditions in real execution environments
+- Validate override functionality and separator handling with real execution paths
+- Cover error conditions in execution environments
 - Marked with `@pytest.mark.e2e` decorator
 
-#### Test Infrastructure (`conftest.py`)
+#### Test Infrastructure (`tests/conftest.py`)
 
-- Provides common fixtures for mocking system components
-- Defines `SystemExitCalled` exception to handle sys.exit in tests
+- Provides common fixtures for mocking system components with proper import paths
+- Defines reusable fixtures for temporary config files and mock setup
 - Offers parameterized testing fixtures for complex scenarios
-- Includes utilities for temporary file management
+- Includes utilities for consistent mocking across test modules
 
 #### Testing Categories
 
-The test suite covers these key areas:
+The test suite covers these key areas with 284+ tests:
 
 1. **Profile System**: Testing argument merging, conflict resolution, and multiple profile scenarios
-2. **Configuration Management**: Loading, parsing, and handling of various config file formats
+2. **Configuration Management**: Loading, parsing, and handling of various config file formats including exports
 3. **Argument Processing**: Parsing, separation, canonicalization, and precedence rules
-4. **Execution Flow**: Command building, environment variable handling, and subprocess execution
-5. **Error Handling**: Missing executables, configuration files, profiles, and permissions
+4. **Execution Flow**: Command building, environment variable handling, LD_PRELOAD management, and subprocess execution
+5. **Error Handling**: Missing executables, configuration files, profiles, and exception propagation
 6. **System Detection**: Gamescope active state detection and environment variable checks
+7. **Command Building**: Proper handling of gamescope args vs app args, pre/post commands, and environment exports
+8. **Environment Handling**: LD_PRELOAD wrapping, environment variable exports, and hook execution
 
-#### Testing Tools and Practices
+#### Testing Practices and Patterns
 
-- Uses `pytest-mock` (mocker fixture) for dependency isolation, replacing `unittest.mock`
-- Leverages `pytest` framework for test organization and execution
-- Implements parameterized testing for multiple scenarios
+- Uses `pytest-mock` (mocker fixture) for dependency isolation with correct module import paths
+- Implements both parameterized and scenario-based testing approaches
 - Follows AAA (Arrange-Act-Assert) pattern for test structure
-- Uses temporary files for realistic file I/O testing
-- Mocks system calls and environment variables for consistent test execution
+- Uses temporary files for realistic configuration testing
+- Properly mocks system calls, environment variables, and command execution for consistent runs
+- Includes substring-safe assertions (e.g., using regex to check for flags like `-f` vs substring in `--framerate-limit=120`)
+- Handles exception propagation and error code returns in application workflows
+
+#### Test Module Structure
+
+- `tests/test_application.py`: Main application orchestrator and workflow tests
+- `tests/test_profile_manager.py`: Profile parsing, merging, and conflict resolution tests
+- `tests/test_config_manager.py`: Configuration loading, parsing, and ConfigResult tests
+- `tests/test_command_executor.py`: Command building and execution tests
+- `tests/test_argument_processor.py`: Argument parsing and separator handling tests
+- `tests/test_environment_helper.py`: Environment variable and gamescope detection tests
+- `tests/test_system_detector.py`: Executable detection and system state tests
+- `tests/test_gamescope_args.py`: Gamescope argument mappings and conflict tests
+- `tests/test_config_result.py`: Configuration result object behavior tests
+- `tests/test_types.py`: Type definitions and usage in real scenarios tests
+- `tests/test_exceptions.py`: Exception handling and propagation tests
+
+#### Testing Quality Assurance
+
+- All tests use proper mocking to prevent accidental execution of gamescope during testing
+- Exception handling is tested at both unit and application levels
+- Command building is validated to ensure proper argument precedence and conflict resolution
+- Environment variable handling is tested with and without LD_PRELOAD scenarios
+- Test coverage includes edge cases like missing configurations, invalid arguments, and system detection failure
 
 ### Extension Points
 
