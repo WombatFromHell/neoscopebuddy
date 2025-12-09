@@ -66,6 +66,141 @@ class TestCommandExecutorUnit:
         result = CommandExecutor.run_nonblocking("echo test")
         assert result == 0
 
+    def test_run_nonblocking_with_empty_output(self, mocker):
+        """Test run_nonblocking with command that produces no output."""
+        mock_process = Mock()
+        mock_process.stdout.readline.return_value = ""
+        mock_process.stderr.readline.return_value = ""
+        mock_process.wait.return_value = 0
+        mock_stdout = mocker.Mock()
+        mock_stderr = mocker.Mock()
+        mock_process.stdout = mock_stdout
+        mock_process.stderr = mock_stderr
+
+        mock_selector = Mock()
+        # Track call count to eventually return empty map and break the while loop
+        call_count = 0
+
+        def get_map():
+            nonlocal call_count
+            call_count += 1
+            # Return empty map after first call to break out of the while loop
+            if call_count == 1:
+                return {id(mock_process.stdout): mock_process.stdout}
+            return {}
+
+        mock_selector.get_map.side_effect = get_map
+        mock_selector.select.return_value = [(mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)]
+
+        # Mock sys.stdout and sys.stderr to prevent write errors
+        mocker.patch("sys.stdout")
+        mocker.patch("sys.stderr")
+
+        mocker.patch("subprocess.Popen", return_value=mock_process)
+        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+
+        result = CommandExecutor.run_nonblocking("echo ''")
+        assert result == 0
+
+    def test_run_nonblocking_with_immediate_failure(self, mocker):
+        """Test run_nonblocking with command that fails immediately (lines 43-52)."""
+        mock_process = Mock()
+        mock_process.stdout.readline.return_value = ""
+        mock_process.stderr.readline.return_value = ""
+        mock_process.wait.return_value = 1  # Non-zero exit code
+        mock_process.stdout = mocker.Mock()
+        mock_process.stderr = mocker.Mock()
+
+        mock_selector = Mock()
+        mock_selector.get_map.return_value = {}
+        mock_selector.select.return_value = []
+
+        mocker.patch("subprocess.Popen", return_value=mock_process)
+        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+
+        result = CommandExecutor.run_nonblocking("false")
+        assert result == 1
+
+    def test_run_nonblocking_with_stdout_stderr_mix(self, mocker):
+        """Test run_nonblocking with both stdout and stderr output (lines 43-52)."""
+        mock_stdout = Mock()
+        mock_stdout.readline.side_effect = ["stdout line 1\n", "stdout line 2\n", ""]
+        mock_stdout.__hash__ = lambda: 123  # For selector key
+        mock_stderr = Mock()
+        mock_stderr.readline.side_effect = ["stderr line 1\n", ""]
+        mock_stderr.__hash__ = lambda: 456  # For selector key
+
+        mock_process = Mock()
+        mock_process.stdout = mock_stdout
+        mock_process.stderr = mock_stderr
+        mock_process.wait.return_value = 0
+
+        mock_selector = Mock()
+        mock_selector_map = {123: mocker.Mock(fileobj=mock_stdout), 456: mocker.Mock(fileobj=mock_stderr)}
+        call_count = 0
+
+        def get_map():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 3:  # Return maps for 3 iterations
+                return mock_selector_map
+            return {}  # Empty after that
+
+        mock_selector.get_map.side_effect = get_map
+
+        # Simulate selector.select() returning both stdout and stderr in different calls
+        def select():
+            if call_count == 1:
+                return [(mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)]
+            elif call_count == 2:
+                return [(mocker.Mock(fileobj=mock_stderr), selectors.EVENT_READ)]
+            elif call_count == 3:
+                return [(mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)]
+            return []
+
+        mock_selector.select.side_effect = select
+
+        mocker.patch("subprocess.Popen", return_value=mock_process)
+        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+        mocker.patch("sys.stdout")
+        mocker.patch("sys.stderr")
+
+        result = CommandExecutor.run_nonblocking("echo test")
+        assert result == 0
+
+    def test_run_nonblocking_process_exception_handling(self, mocker):
+        """Test run_nonblocking exception handling when selector operations fail."""
+        mock_process = Mock()
+        mock_process.stdout = mocker.Mock()
+        mock_process.stderr = mocker.Mock()
+        mock_process.wait.return_value = 0
+
+        # Make readline raise an exception to test error handling
+        mock_process.stdout.readline.side_effect = IOError("Read error")
+        mock_process.stderr.readline.side_effect = IOError("Read error")
+
+        mock_selector = Mock()
+        # Track call count to eventually return empty map and break the while loop
+        call_count = 0
+
+        def get_map():
+            nonlocal call_count
+            call_count += 1
+            # Return empty map after first call to break out of the while loop
+            if call_count == 1:
+                return {id(mock_process.stdout): mock_process.stdout}
+            return {}
+
+        mock_selector.get_map.side_effect = get_map
+        mock_selector.select.return_value = [(mocker.Mock(fileobj=mock_process.stdout), selectors.EVENT_READ)]
+
+        mocker.patch("subprocess.Popen", return_value=mock_process)
+        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+
+        # We expect this to handle the IOError gracefully and return the process exit code
+        result = CommandExecutor.run_nonblocking("echo test")
+        assert result == 0
+
     @pytest.mark.parametrize(
         "env_vars,expected",
         [
@@ -381,3 +516,260 @@ class TestCommandExecutorEndToEnd:
         assert "echo 'starting'" in full_cmd
         assert "echo 'finished'" in full_cmd
         assert "gamescope -f -- testapp" in full_cmd
+
+    def test_build_inactive_gamescope_command_no_separator(self, mocker, monkeypatch):
+        """Test _build_inactive_gamescope_command when no -- separator is found."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+        )
+        # Mock LD_PRELOAD functions to return False
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False
+        )
+        # Use monkeypatch to properly mock os.environ.get
+        def mock_environ_get(key, default=None):
+            if key == "LD_PRELOAD":
+                return None
+            elif key == "NSCB_DEBUG":
+                return ""  # So debug_log doesn't output anything
+            else:
+                # For all other keys, return the default value
+                return default if default is not None else ""
+        monkeypatch.setattr("os.environ.get", mock_environ_get)
+
+        args = ["-f", "-W", "1920"]  # No -- separator
+        result = CommandExecutor._build_inactive_gamescope_command(args, "", "")
+
+        # Should build a command with gamescope and the args directly
+        assert "gamescope -f -W 1920" in result
+        assert "--" not in result  # No separator should be present
+
+    def test_build_inactive_gamescope_command_no_separator_with_exports(self, mocker, monkeypatch):
+        """Test _build_inactive_gamescope_command when no -- separator but with exports."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+        )
+        # Mock LD_PRELOAD functions to return False
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False
+        )
+        # Use monkeypatch to properly mock os.environ.get
+        def mock_environ_get(key, default=None):
+            if key == "LD_PRELOAD":
+                return None
+            elif key == "NSCB_DEBUG":
+                return ""  # So debug_log doesn't output anything
+            else:
+                # For all other keys, return the default value
+                return default if default is not None else ""
+        monkeypatch.setattr("os.environ.get", mock_environ_get)
+
+        args = ["-f", "-W", "1920"]  # No -- separator
+        exports = {"TEST_VAR": "test_value"}
+        result = CommandExecutor._build_inactive_gamescope_command(args, "", "", exports)
+
+        # Should build a command that executes exports and then gamescope
+        assert "env TEST_VAR=test_value true" in result  # Export command (shlex.quote doesn't add quotes for simple values)
+        assert "gamescope -f -W 1920" in result  # Gamescope command
+
+    def test_build_active_gamescope_command_no_separator(self, mocker, monkeypatch):
+        """Test _build_active_gamescope_command when no -- separator is found."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+        )
+        # Mock LD_PRELOAD functions to return False
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False
+        )
+        # Use monkeypatch to properly mock os.environ.get
+        def mock_environ_get(key, default=None):
+            if key == "LD_PRELOAD":
+                return None
+            elif key == "NSCB_DEBUG":
+                return ""  # So debug_log doesn't output anything
+            else:
+                # For all other keys, return the default value
+                return default if default is not None else ""
+        monkeypatch.setattr("os.environ.get", mock_environ_get)
+
+        args = ["-f", "-W", "1920"]  # No -- separator
+        result = CommandExecutor._build_active_gamescope_command(args, "", "")
+
+        # Should return empty string when no pre/post commands and no app args
+        assert result == ""
+
+    def test_build_active_gamescope_command_no_separator_with_exports(self, mocker, monkeypatch):
+        """Test _build_active_gamescope_command when no -- separator but with exports."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+        )
+        # Mock LD_PRELOAD functions to return False
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False
+        )
+        # Use monkeypatch to properly mock os.environ.get
+        def mock_environ_get(key, default=None):
+            if key == "LD_PRELOAD":
+                return None
+            elif key == "NSCB_DEBUG":
+                return ""  # So debug_log doesn't output anything
+            else:
+                # For all other keys, return the default value
+                return default if default is not None else ""
+        monkeypatch.setattr("os.environ.get", mock_environ_get)
+
+        args = ["-f", "-W", "1920"]  # No -- separator
+        exports = {"TEST_VAR": "test_value"}
+        result = CommandExecutor._build_active_gamescope_command(args, "", "", exports)
+
+        # Should build a command that executes the exports
+        assert "env TEST_VAR=test_value" in result
+        # In active gamescope with exports but no app args, no 'true' is added since there are no app args to execute
+
+    def test_execute_gamescope_command_empty_scenario(self, mocker):
+        """Test execute_gamescope_command when no command to execute is built."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+        )
+        # Mock build command to return empty string
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor._build_active_gamescope_command",
+            return_value=""
+        )
+
+        result = CommandExecutor.execute_gamescope_command(["-f", "-W", "1920"])
+
+        # Should return 0 when no command to execute
+        assert result == 0
+
+    def test_execute_gamescope_command_with_ld_preload(self, mocker, monkeypatch):
+        """Test execute_gamescope_command when LD_PRELOAD is present and should be handled."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+        )
+        # Mock LD_PRELOAD functions to return True so LD_PRELOAD is handled
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False
+        )
+        # Use monkeypatch to mock os.environ.get to return an LD_PRELOAD value
+        def mock_environ_get(key, default=None):
+            if key == "LD_PRELOAD":
+                return "/path/to/library.so"  # Simulate LD_PRELOAD being set
+            elif key == "NSCB_DEBUG":
+                return ""  # So debug_log doesn't output anything
+            else:
+                return default if default is not None else ""
+        monkeypatch.setattr("os.environ.get", mock_environ_get)
+
+        # Mock run_nonblocking to capture the command that would be executed
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+
+        args = ["-f", "--", "testapp"]
+        result = CommandExecutor.execute_gamescope_command(args)
+
+        # Verify run_nonblocking was called and check that LD_PRELOAD handling was included
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]  # Get the command string argument
+
+        # Should include env -u LD_PRELOAD for gamescope and preserve LD_PRELOAD for app
+        assert "env -u LD_PRELOAD gamescope" in call_args
+        assert 'env LD_PRELOAD=/path/to/library.so testapp' in call_args
+
+        assert result == 0
+
+    def test_execute_gamescope_command_with_ld_preload_disabled_by_env(self, mocker, monkeypatch):
+        """Test execute_gamescope_command when LD_PRELOAD wrapping is disabled via environment."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+        )
+        # Mock LD_PRELOAD functions to return True to disable LD_PRELOAD wrapping
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=True  # Disable LD_PRELOAD wrapping
+        )
+        # Use monkeypatch to mock os.environ.get to return an LD_PRELOAD value
+        def mock_environ_get(key, default=None):
+            if key == "LD_PRELOAD":
+                return "/path/to/library.so"  # Simulate LD_PRELOAD being set
+            elif key == "NSCB_DEBUG":
+                return ""  # So debug_log doesn't output anything
+            elif key == "NSCB_DISABLE_LD_PRELOAD_WRAP":
+                return "1"  # This is what would disable LD_PRELOAD wrapping
+            else:
+                return default if default is not None else ""
+        monkeypatch.setattr("os.environ.get", mock_environ_get)
+
+        # Mock run_nonblocking to capture the command that would be executed
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+
+        args = ["-f", "--", "testapp"]
+        result = CommandExecutor.execute_gamescope_command(args)
+
+        # Verify run_nonblocking was called and check that LD_PRELOAD was NOT handled for gamescope
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]  # Get the command string argument
+
+        # Should NOT include env -u LD_PRELOAD since wrapping is disabled
+        assert "env -u LD_PRELOAD gamescope" not in call_args
+        # Should run gamescope directly with the app
+        assert "gamescope -f -- testapp" in call_args
+
+        assert result == 0
+
+    def test_execute_gamescope_command_with_ld_preload_disabled_by_faugus(self, mocker, monkeypatch):
+        """Test execute_gamescope_command when LD_PRELOAD wrapping is disabled via FAUGUS_LOG."""
+        # Mock environment detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+        )
+        # Mock LD_PRELOAD functions to return True to disable LD_PRELOAD wrapping
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=True  # Disable LD_PRELOAD wrapping
+        )
+        # Use monkeypatch to mock os.environ.get to return an LD_PRELOAD value and FAUGUS_LOG
+        def mock_environ_get(key, default=None):
+            if key == "LD_PRELOAD":
+                return "/path/to/library.so"  # Simulate LD_PRELOAD being set
+            elif key == "NSCB_DEBUG":
+                return ""  # So debug_log doesn't output anything
+            elif key == "FAUGUS_LOG":
+                return "1"  # This disables LD_PRELOAD wrapping automatically
+            else:
+                return default if default is not None else ""
+        monkeypatch.setattr("os.environ.get", mock_environ_get)
+
+        # Mock run_nonblocking to capture the command that would be executed
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+
+        args = ["-f", "--", "testapp"]
+        result = CommandExecutor.execute_gamescope_command(args)
+
+        # Verify run_nonblocking was called and check that LD_PRELOAD was NOT handled for gamescope
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]  # Get the command string argument
+
+        # Should NOT include env -u LD_PRELOAD since wrapping is disabled
+        assert "env -u LD_PRELOAD gamescope" not in call_args
+        # Should run gamescope directly with the app
+        assert "gamescope -f -- testapp" in call_args
+
+        assert result == 0

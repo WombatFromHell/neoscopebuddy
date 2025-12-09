@@ -50,7 +50,7 @@ class TestPrintHelp:
         # Check for key elements in the help message
         assert "neoscopebuddy - gamescope wrapper" in output
         assert "Usage:" in output
-        assert "nscb -p fullscreen -- /bin/mygame" in output
+        assert "nscb.pyz -p fullscreen -- /bin/mygame" in output
         assert "Config file:" in output
         assert "Config format:" in output
         assert "Supports NSCB_PRE_CMD" in output

@@ -42,8 +42,13 @@ class CommandExecutor:
         while sel.get_map():
             for key, _ in sel.select():
                 fileobj: TextIO = cast(TextIO, key.fileobj)
-                line = fileobj.readline()
-                if not line:
+                try:
+                    line = fileobj.readline()
+                    if not line:
+                        sel.unregister(fileobj)
+                        continue
+                except (IOError, OSError):
+                    # If we can't read from the fileobj, unregister it
                     sel.unregister(fileobj)
                     continue
 
