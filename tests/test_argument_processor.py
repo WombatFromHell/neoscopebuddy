@@ -1,13 +1,6 @@
 """Tests for the argument processing functionality in NeoscopeBuddy."""
 
-import sys
-from pathlib import Path
-
 import pytest
-
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
 
 from nscb.application import Application
 from nscb.argument_processor import ArgumentProcessor

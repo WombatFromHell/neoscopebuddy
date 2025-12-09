@@ -1,18 +1,12 @@
 """Tests for the exception classes in NeoscopeBuddy."""
 
-import sys
 from pathlib import Path
 
 import pytest
 
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
-
 from nscb.application import Application
 from nscb.config_manager import ConfigManager
 from nscb.exceptions import ConfigNotFoundError, NscbError, ProfileNotFoundError
-from nscb.profile_manager import ProfileManager
 
 
 class TestExceptionsUnit:
@@ -75,6 +69,22 @@ class TestExceptionsUnit:
         for exc_class in exceptions:
             assert issubclass(exc_class, NscbError)
             assert issubclass(exc_class, Exception)
+
+    @pytest.mark.parametrize(
+        "exc_class, msg",
+        [
+            (NscbError, "base error"),
+            (ConfigNotFoundError, "config not found"),
+            (ProfileNotFoundError, "profile not found"),
+        ],
+    )
+    def test_exception_polymorphism_parametrized(self, exc_class, msg):
+        """Test that different exceptions can be caught as NscbError using parametrization."""
+        try:
+            raise exc_class(msg)
+        except NscbError as e:
+            assert isinstance(e, exc_class)
+            assert str(e) == msg
 
     def test_exception_polymorphism(self):
         """Test that different exceptions can be caught as NscbError."""

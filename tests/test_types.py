@@ -1,17 +1,9 @@
 """Tests for the type definitions in NeoscopeBuddy."""
 
-import sys
-from pathlib import Path
-
 import pytest
-
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
 
 from nscb.application import Application
 from nscb.argument_processor import ArgumentProcessor
-from nscb.config_manager import ConfigManager
 from nscb.profile_manager import ProfileManager
 from nscb.types import (
     ArgsList,
@@ -74,6 +66,48 @@ class TestTypesUnit:
         assert isinstance(exports, dict)
         assert all(isinstance(k, str) for k in exports.keys())
         assert all(isinstance(v, str) for v in exports.values())
+
+    @pytest.mark.parametrize(
+        "test_type, test_value, expected_type",
+        [
+            (ArgsList, ["-f", "-W", "1920", "--", "app.exe"], list),
+            (FlagTuple, ("-W", "1920"), tuple),
+            (ProfileArgs, {"gaming": "-f -W 1920 -H 1080"}, dict),
+            (ConfigData, {"profile1": "-f -W 1920"}, dict),
+            (EnvExports, {"VAR1": "value1"}, dict),
+            (ExitCode, 0, int),
+            (ProfileArgsList, [["-f", "-W", "1920"]], list),
+        ],
+    )
+    def test_type_definitions_various(self, test_type, test_value, expected_type):
+        """Test various type definitions with parametrization."""
+        assert isinstance(test_value, expected_type)
+        if expected_type is list:
+            if isinstance(test_value[0], list):  # ProfileArgsList case
+                assert all(isinstance(item, list) for item in test_value)
+                assert all(
+                    isinstance(arg, str)
+                    for sublist in test_value
+                    for arg in sublist
+                    if isinstance(arg, str) or isinstance(arg, (list, tuple))
+                )
+            elif (
+                test_value
+                and isinstance(test_value[0], tuple)
+                and len(test_value[0]) == 2
+            ):  # FlagTuple case
+                assert all(
+                    isinstance(item, tuple) and len(item) == 2 for item in test_value
+                )
+        elif expected_type is dict:
+            assert all(isinstance(k, str) for k in test_value.keys())
+            assert (
+                all(isinstance(v, str) for v in test_value.values())
+                if test_type in [ProfileArgs, ConfigData, EnvExports]
+                else True
+            )
+        elif expected_type is int:
+            assert test_value == 0  # ExitCode 0 case
 
     def test_exit_code_type(self):
         """Test ExitCode type alias."""
@@ -193,7 +227,7 @@ export PROTON_ENABLE_FSR=1
         mocker.patch(
             "nscb.system_detector.PathHelper.executable_exists", return_value=True
         )
-        mock_run = mocker.patch(
+        mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking",
             return_value=exit_code,
         )
@@ -285,7 +319,7 @@ export PROTON_ENABLE_FSR=1
             isinstance(k, str) and isinstance(v, str) for k, v in exports.items()
         )
         assert isinstance(profile_args_list, list) and all(
-            isinstance(l, list) for l in profile_args_list
+            isinstance(item, list) for item in profile_args_list
         )
 
         # Run through application to test types in real usage
@@ -296,7 +330,7 @@ export PROTON_ENABLE_FSR=1
         mocker.patch(
             "nscb.system_detector.PathHelper.executable_exists", return_value=True
         )
-        mock_run = mocker.patch(
+        mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
 

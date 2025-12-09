@@ -5,6 +5,17 @@ from unittest.mock import Mock
 import pytest
 
 
+def pytest_configure():
+    """Add the src directory to the Python path before any tests run."""
+    import sys
+    from pathlib import Path
+
+    # Add src directory to Python path
+    src_dir = Path(__file__).parent.parent / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
+
 class SystemExitCalled(Exception):
     """Custom exception to simulate sys.exit behavior in tests"""
 

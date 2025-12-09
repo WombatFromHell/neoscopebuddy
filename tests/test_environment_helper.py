@@ -1,16 +1,8 @@
 """Tests for the environment helper functionality in NeoscopeBuddy."""
 
 import os
-import subprocess
-import sys
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pytest
-
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
 
 from nscb.application import Application
 from nscb.command_executor import CommandExecutor
@@ -84,33 +76,33 @@ class TestEnvironmentHelperUnit:
         monkeypatch.setenv("XDG_CURRENT_DESKTOP", "gamescope")
         assert EnvironmentHelper.is_gamescope_active() is True
 
-    def test_is_gamescope_active_not_gamescope_xdg(self, monkeypatch):
+    def test_is_gamescope_active_not_gamescope_xdg(self, monkeypatch, mocker):
         monkeypatch.setenv("XDG_CURRENT_DESKTOP", "GNOME")
         # When XDG_CURRENT_DESKTOP is not gamescope, it should check ps command
-        with patch(
+        mocker.patch(
             "subprocess.check_output", return_value="1234 ?    Sl     0:00 Xorg"
-        ):
-            assert EnvironmentHelper.is_gamescope_active() is False
+        )
+        assert EnvironmentHelper.is_gamescope_active() is False
 
-    def test_is_gamescope_active_ps_method_finds_gamescope(self, monkeypatch):
+    def test_is_gamescope_active_ps_method_finds_gamescope(self, monkeypatch, mocker):
         monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        with patch(
+        mocker.patch(
             "subprocess.check_output",
             return_value="1234 ?    Sl     0:00 gamescope -f -W 1920 -H 1080",
-        ):
-            assert EnvironmentHelper.is_gamescope_active() is True
+        )
+        assert EnvironmentHelper.is_gamescope_active() is True
 
-    def test_is_gamescope_active_ps_method_no_gamescope(self, monkeypatch):
+    def test_is_gamescope_active_ps_method_no_gamescope(self, monkeypatch, mocker):
         monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        with patch(
+        mocker.patch(
             "subprocess.check_output", return_value="1234 ?    Sl     0:00 Xorg"
-        ):
-            assert EnvironmentHelper.is_gamescope_active() is False
+        )
+        assert EnvironmentHelper.is_gamescope_active() is False
 
-    def test_is_gamescope_active_ps_command_error(self, monkeypatch):
+    def test_is_gamescope_active_ps_command_error(self, monkeypatch, mocker):
         monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
-        with patch("subprocess.check_output", side_effect=Exception("Command failed")):
-            assert EnvironmentHelper.is_gamescope_active() is False
+        mocker.patch("subprocess.check_output", side_effect=Exception("Command failed"))
+        assert EnvironmentHelper.is_gamescope_active() is False
 
     @pytest.mark.parametrize(
         "value,expected",
@@ -189,13 +181,12 @@ class TestEnvironmentHelperUnit:
 class TestEnvironmentHelperIntegration:
     """Integration tests for EnvironmentHelper with other modules."""
 
-    def test_environment_helper_system_detector_integration(self):
+    def test_environment_helper_system_detector_integration(self, mocker):
         """Test that EnvironmentHelper and SystemDetector share gamescope detection logic."""
         # Both modules should be able to detect gamescope
-        with pytest.MonkeyPatch().context() as mp:
-            mp.setenv("XDG_CURRENT_DESKTOP", "gamescope")
-            assert EnvironmentHelper.is_gamescope_active() is True
-            assert SystemDetector.is_gamescope_active() is True
+        mocker.patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "gamescope"}, clear=True)
+        assert EnvironmentHelper.is_gamescope_active() is True
+        assert SystemDetector.is_gamescope_active() is True
 
     def test_environment_helper_command_executor_integration(self, mocker):
         """Test EnvironmentHelper working with CommandExecutor for pre/post commands."""

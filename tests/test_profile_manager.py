@@ -1,17 +1,8 @@
 """Tests for the profile management functionality in NeoscopeBuddy."""
 
-import sys
-from pathlib import Path
-
 import pytest
 
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
-
 from nscb.application import Application
-from nscb.argument_processor import ArgumentProcessor
-from nscb.config_manager import ConfigManager
 from nscb.profile_manager import ProfileManager
 
 
@@ -42,8 +33,49 @@ class TestProfileManagerUnit:
             with pytest.raises(ValueError, match=error_msg):
                 ProfileManager.parse_profile_args(input_args)
 
+    @pytest.mark.parametrize(
+        "profile_args,override_args,expected_result",
+        [
+            # Basic conflict resolution - fullscreen vs borderless
+            (["-f"], ["--borderless"], ["--borderless"]),
+            (["--borderless"], ["-f"], ["-f"]),
+            # Width and height preservation during conflict
+            (
+                ["-f", "-W", "1920", "-H", "1080"],
+                ["--borderless"],
+                ["--borderless", "-W", "1920", "-H", "1080"],
+            ),
+            # Multiple flag preservation
+            (
+                ["-f", "-C", "5", "-s", "1.5"],
+                ["--borderless"],
+                ["--borderless", "-C", "5", "-s", "1.5"],
+            ),
+            # Override value replacement
+            (["-W", "1920"], ["-W", "2560"], ["-W", "2560"]),
+            # No conflicts - all should be preserved
+            (
+                ["-W", "1920", "-H", "1080"],
+                ["--mangoapp"],
+                ["-W", "1920", "-H", "1080", "--mangoapp"],
+            ),
+            # Empty profile args
+            ([], ["-f", "-W", "1920"], ["-f", "-W", "1920"]),
+            # Empty override args
+            (["-f", "-W", "1920"], [], ["-f", "-W", "1920"]),
+            # Application separator preservation
+            (["-f", "--", "app.exe"], ["-W", "1920"], ["-f", "-W", "1920"]),
+        ],
+    )
+    def test_merge_arguments_variations_parametrized(
+        self, profile_args, override_args, expected_result
+    ):
+        """Test argument merging with conflict resolution using parametrization."""
+        result = ProfileManager.merge_arguments(profile_args, override_args)
+        assert result == expected_result
+
     def test_merge_arguments_variations(self):
-        """Test argument merging with conflict resolution"""
+        """Test argument merging with conflict resolution - legacy test"""
         test_cases = [
             # Basic conflict resolution - fullscreen vs borderless
             (["-f"], ["--borderless"], ["--borderless"]),

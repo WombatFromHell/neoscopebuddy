@@ -1,13 +1,6 @@
 """Tests for the gamescope argument mappings in NeoscopeBuddy."""
 
-import sys
-from pathlib import Path
-
 import pytest
-
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
 
 from nscb.application import Application
 from nscb.argument_processor import ArgumentProcessor
@@ -106,7 +99,7 @@ class TestGamescopeArgsMapIntegration:
         flags, positionals = ArgumentProcessor.separate_flags_and_positionals(test_args)
 
         # All arguments should be processed correctly
-        flag_dict = {flag: value for flag, value in flags}
+        _flag_dict = {flag: value for flag, value in flags}
         assert ("-f", None) in flags  # fullscreen flag
         assert ("-W", "1920") in flags  # width flag with value
         assert ("--mangoapp", None) in flags  # gamescope flag without mapping

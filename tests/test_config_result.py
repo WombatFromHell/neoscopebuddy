@@ -1,18 +1,10 @@
 """Tests for the config result container in NeoscopeBuddy."""
 
-import sys
-from pathlib import Path
-
 import pytest
-
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
 
 from nscb.application import Application
 from nscb.config_manager import ConfigManager
 from nscb.config_result import ConfigResult
-from nscb.profile_manager import ProfileManager
 
 
 class TestConfigResultUnit:
@@ -53,6 +45,27 @@ class TestConfigResultUnit:
             ("gaming", "-f -W 1920"),
             ("streaming", "--borderless -W 1280"),
         }
+
+    @pytest.mark.parametrize(
+        "profiles,exports,expected_profiles,expected_exports",
+        [
+            ({"gaming": "-f -W 1920"}, {}, {"gaming": "-f -W 1920"}, {}),
+            ({}, {"VAR": "value"}, {}, {"VAR": "value"}),
+            (
+                {"gaming": "-f -W 1920"},
+                {"VAR": "value"},
+                {"gaming": "-f -W 1920"},
+                {"VAR": "value"},
+            ),
+            ({}, {}, {}, {}),
+        ],
+    )
+    def test_config_result_initialization_parametrized(
+        self, profiles, exports, expected_profiles, expected_exports
+    ):
+        result = ConfigResult(profiles, exports)
+        assert result.profiles == expected_profiles
+        assert result.exports == expected_exports
 
     def test_config_result_equality_with_dict(self):
         profiles = {"gaming": "-f -W 1920"}

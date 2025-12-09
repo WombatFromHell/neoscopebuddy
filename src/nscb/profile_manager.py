@@ -76,6 +76,26 @@ class ProfileManager:
         return result + p_pos + o_pos + o_after
 
     @staticmethod
+    def _process_args_before_separator(
+        profile_args: ArgsList, override_args: ArgsList
+    ) -> tuple[list[FlagTuple], ArgsList, list[FlagTuple], ArgsList]:
+        """
+        Process the arguments before the '--' separator to separate flags and positionals.
+        """
+        from .argument_processor import ArgumentProcessor
+
+        p_before, o_before = (
+            ArgumentProcessor.split_at_separator(profile_args)[0],
+            ArgumentProcessor.split_at_separator(override_args)[0],
+        )
+
+        # Separate flags and positionals
+        p_flags, p_pos = ArgumentProcessor.separate_flags_and_positionals(p_before)
+        o_flags, o_pos = ArgumentProcessor.separate_flags_and_positionals(o_before)
+
+        return p_flags, p_pos, o_flags, o_pos
+
+    @staticmethod
     def _merge_flags(
         profile_flags: list[FlagTuple], override_flags: list[FlagTuple]
     ) -> list[FlagTuple]:
@@ -86,45 +106,67 @@ class ProfileManager:
             ProfileManager._canon("-b"),  # borderless
         }
 
-        # Classify flags
-        profile_conflicts = [
-            f
-            for f in profile_flags
-            if ProfileManager._canon(f[0]) in conflict_canon_set
-        ]
-        profile_nonconflicts = [
-            f
-            for f in profile_flags
-            if ProfileManager._canon(f[0]) not in conflict_canon_set
-        ]
-        override_conflicts = [
-            f
-            for f in override_flags
-            if ProfileManager._canon(f[0]) in conflict_canon_set
-        ]
-        override_nonconflicts = [
-            f
-            for f in override_flags
-            if ProfileManager._canon(f[0]) not in conflict_canon_set
-        ]
-
-        # Resolve conflicts
-        final_conflicts = (
-            override_conflicts if override_conflicts else profile_conflicts
+        # Classify flags into conflict and non-conflict categories
+        profile_conflicts, profile_nonconflicts = (
+            ProfileManager._classify_flags_by_conflict(
+                profile_flags, conflict_canon_set
+            )
+        )
+        override_conflicts, override_nonconflicts = (
+            ProfileManager._classify_flags_by_conflict(
+                override_flags, conflict_canon_set
+            )
         )
 
-        # Handle non-conflicts
+        # Resolve conflicts - override flags take precedence
+        final_conflicts = ProfileManager._resolve_conflicts(
+            profile_conflicts, override_conflicts
+        )
+
+        # Handle non-conflicts - remove conflicting flags from profile if overridden
+        final_nonconflicts = ProfileManager._handle_non_conflicts(
+            profile_nonconflicts, override_nonconflicts
+        )
+
+        # Combine all flags
+        return final_conflicts + final_nonconflicts
+
+    @staticmethod
+    def _classify_flags_by_conflict(
+        flags: list[FlagTuple], conflict_canon_set: set[str]
+    ) -> tuple[list[FlagTuple], list[FlagTuple]]:
+        """Classify flags into conflict and non-conflict lists."""
+        conflicts = [
+            f for f in flags if ProfileManager._canon(f[0]) in conflict_canon_set
+        ]
+        nonconflicts = [
+            f for f in flags if ProfileManager._canon(f[0]) not in conflict_canon_set
+        ]
+        return conflicts, nonconflicts
+
+    @staticmethod
+    def _resolve_conflicts(
+        profile_conflicts: list[FlagTuple], override_conflicts: list[FlagTuple]
+    ) -> list[FlagTuple]:
+        """Resolve conflicting flags - override flags take precedence."""
+        return override_conflicts if override_conflicts else profile_conflicts
+
+    @staticmethod
+    def _handle_non_conflicts(
+        profile_nonconflicts: list[FlagTuple], override_nonconflicts: list[FlagTuple]
+    ) -> list[FlagTuple]:
+        """Handle non-conflicting flags - remove profile flags if overridden."""
+        # Get canonical forms of override flags to check for duplicates
         override_canon_set = {
             ProfileManager._canon(f[0]) for f in override_nonconflicts
         }
+        # Keep only profile non-conflicts that aren't overridden
         remaining_profile_nonconflicts = [
             f
             for f in profile_nonconflicts
             if ProfileManager._canon(f[0]) not in override_canon_set
         ]
-
-        # Combine all flags
-        return final_conflicts + remaining_profile_nonconflicts + override_nonconflicts
+        return remaining_profile_nonconflicts + override_nonconflicts
 
     @staticmethod
     def _canon(flag: str) -> str:

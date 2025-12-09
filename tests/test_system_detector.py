@@ -1,20 +1,11 @@
 """Tests for the system detection functionality in NeoscopeBuddy."""
 
-import os
 import subprocess
-import sys
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pytest
 
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
-
 from nscb.application import Application
-from nscb.environment_helper import EnvironmentHelper
-from nscb.path_helper import PathHelper
 from nscb.system_detector import SystemDetector
 
 
@@ -82,6 +73,30 @@ class TestSystemDetectorUnit:
         )
         assert SystemDetector.is_gamescope_active() is False
 
+    @pytest.mark.parametrize(
+        "path_env,access_result,exists_result,expected",
+        [
+            ("/usr/bin:/bin", True, True, True),  # Standard PATH with access
+            ("", False, False, False),  # Empty PATH
+            ("/nonexistent", False, False, False),  # Non-existent path
+            ("/usr/bin", True, True, True),  # Valid path with access
+            ("/usr/bin", False, True, False),  # Path exists but no access
+        ],
+    )
+    def test_find_executable_parametrized(
+        self, mocker, path_env, access_result, exists_result, expected
+    ):
+        """Test find_executable with different PATH environments using parametrization."""
+        mocker.patch.dict("os.environ", {"PATH": path_env}, clear=True)
+        if path_env:
+            mocker.patch.object(Path, "exists", return_value=exists_result)
+            mocker.patch.object(Path, "is_dir", return_value=True)
+            mocker.patch.object(Path, "is_file", return_value=exists_result)
+            mocker.patch("os.access", return_value=access_result)
+
+        result = SystemDetector.find_executable("test_executable")
+        assert result == expected
+
     def test_is_gamescope_active_both_methods(self, mocker):
         mocker.patch.dict("os.environ", {"XDG_CURRENT_DESKTOP": "gamescope"})
         mock_ps = mocker.patch("subprocess.check_output")
@@ -140,7 +155,7 @@ class TestSystemDetectorIntegration:
         mocker.patch(
             "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
         )
-        mock_run = mocker.patch(
+        mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
 

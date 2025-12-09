@@ -1,19 +1,12 @@
 """Tests for the main application orchestrator in NeoscopeBuddy."""
 
 import os
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
-
-from nscb.application import Application, debug_log, main, print_help
-from nscb.exceptions import NscbError
-from nscb.types import ArgsList
+from nscb.application import Application, debug_log, print_help
 
 
 class TestDebugLog:
@@ -507,7 +500,7 @@ streaming=--borderless -W 1280 -H 720
             # For now, acknowledging this limitation
             import logging
 
-            logging.error(f"could not find nscb.conf")
+            logging.error("could not find nscb.conf")
             result = 1
 
         # In either case, log should be called

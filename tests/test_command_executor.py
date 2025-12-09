@@ -1,23 +1,10 @@
 """Tests for the command execution functionality in NeoscopeBuddy."""
 
-import io
-import os
 import selectors
-import subprocess
-import sys
-from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pytest
 
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
-
-from nscb.application import Application
 from nscb.command_executor import CommandExecutor, debug_log
-from nscb.environment_helper import EnvironmentHelper
 from nscb.system_detector import SystemDetector
 
 
@@ -51,12 +38,12 @@ class TestCommandExecutorUnit:
 
     def test_run_nonblocking_with_mocked_subprocess(self, mocker):
         # Mock subprocess.Popen to avoid actual process creation
-        mock_process = Mock()
+        mock_process = mocker.MagicMock()
         mock_process.stdout.readline.return_value = ""
         mock_process.stderr.readline.return_value = ""
         mock_process.wait.return_value = 0
 
-        mock_selector = Mock()
+        mock_selector = mocker.MagicMock()
         mock_selector.get_map.return_value = []
         mock_selector.select.return_value = []
 
@@ -68,7 +55,7 @@ class TestCommandExecutorUnit:
 
     def test_run_nonblocking_with_empty_output(self, mocker):
         """Test run_nonblocking with command that produces no output."""
-        mock_process = Mock()
+        mock_process = mocker.MagicMock()
         mock_process.stdout.readline.return_value = ""
         mock_process.stderr.readline.return_value = ""
         mock_process.wait.return_value = 0
@@ -77,7 +64,7 @@ class TestCommandExecutorUnit:
         mock_process.stdout = mock_stdout
         mock_process.stderr = mock_stderr
 
-        mock_selector = Mock()
+        mock_selector = mocker.MagicMock()
         # Track call count to eventually return empty map and break the while loop
         call_count = 0
 
@@ -90,7 +77,9 @@ class TestCommandExecutorUnit:
             return {}
 
         mock_selector.get_map.side_effect = get_map
-        mock_selector.select.return_value = [(mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)]
+        mock_selector.select.return_value = [
+            (mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)
+        ]
 
         # Mock sys.stdout and sys.stderr to prevent write errors
         mocker.patch("sys.stdout")
@@ -104,14 +93,14 @@ class TestCommandExecutorUnit:
 
     def test_run_nonblocking_with_immediate_failure(self, mocker):
         """Test run_nonblocking with command that fails immediately (lines 43-52)."""
-        mock_process = Mock()
+        mock_process = mocker.MagicMock()
         mock_process.stdout.readline.return_value = ""
         mock_process.stderr.readline.return_value = ""
         mock_process.wait.return_value = 1  # Non-zero exit code
         mock_process.stdout = mocker.Mock()
         mock_process.stderr = mocker.Mock()
 
-        mock_selector = Mock()
+        mock_selector = mocker.MagicMock()
         mock_selector.get_map.return_value = {}
         mock_selector.select.return_value = []
 
@@ -123,20 +112,23 @@ class TestCommandExecutorUnit:
 
     def test_run_nonblocking_with_stdout_stderr_mix(self, mocker):
         """Test run_nonblocking with both stdout and stderr output (lines 43-52)."""
-        mock_stdout = Mock()
+        mock_stdout = mocker.MagicMock()
         mock_stdout.readline.side_effect = ["stdout line 1\n", "stdout line 2\n", ""]
         mock_stdout.__hash__ = lambda: 123  # For selector key
-        mock_stderr = Mock()
+        mock_stderr = mocker.MagicMock()
         mock_stderr.readline.side_effect = ["stderr line 1\n", ""]
         mock_stderr.__hash__ = lambda: 456  # For selector key
 
-        mock_process = Mock()
+        mock_process = mocker.MagicMock()
         mock_process.stdout = mock_stdout
         mock_process.stderr = mock_stderr
         mock_process.wait.return_value = 0
 
-        mock_selector = Mock()
-        mock_selector_map = {123: mocker.Mock(fileobj=mock_stdout), 456: mocker.Mock(fileobj=mock_stderr)}
+        mock_selector = mocker.MagicMock()
+        mock_selector_map = {
+            123: mocker.Mock(fileobj=mock_stdout),
+            456: mocker.Mock(fileobj=mock_stderr),
+        }
         call_count = 0
 
         def get_map():
@@ -170,7 +162,7 @@ class TestCommandExecutorUnit:
 
     def test_run_nonblocking_process_exception_handling(self, mocker):
         """Test run_nonblocking exception handling when selector operations fail."""
-        mock_process = Mock()
+        mock_process = mocker.MagicMock()
         mock_process.stdout = mocker.Mock()
         mock_process.stderr = mocker.Mock()
         mock_process.wait.return_value = 0
@@ -179,7 +171,7 @@ class TestCommandExecutorUnit:
         mock_process.stdout.readline.side_effect = IOError("Read error")
         mock_process.stderr.readline.side_effect = IOError("Read error")
 
-        mock_selector = Mock()
+        mock_selector = mocker.MagicMock()
         # Track call count to eventually return empty map and break the while loop
         call_count = 0
 
@@ -192,7 +184,9 @@ class TestCommandExecutorUnit:
             return {}
 
         mock_selector.get_map.side_effect = get_map
-        mock_selector.select.return_value = [(mocker.Mock(fileobj=mock_process.stdout), selectors.EVENT_READ)]
+        mock_selector.select.return_value = [
+            (mocker.Mock(fileobj=mock_process.stdout), selectors.EVENT_READ)
+        ]
 
         mocker.patch("subprocess.Popen", return_value=mock_process)
         mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
@@ -317,12 +311,12 @@ class TestCommandExecutorIntegration:
         )
 
         # Mock subprocess to prevent actual execution
-        mock_process = Mock()
+        mock_process = mocker.MagicMock()
         mock_process.stdout.readline.return_value = ""
         mock_process.stderr.readline.return_value = ""
         mock_process.wait.return_value = 0
 
-        mock_selector = Mock()
+        mock_selector = mocker.MagicMock()
         mock_selector.get_map.return_value = []
         mock_selector.select.return_value = []
 
@@ -469,7 +463,7 @@ class TestCommandExecutorEndToEnd:
             "nscb.system_detector.SystemDetector.is_gamescope_active",
             return_value=False,
         )
-        mock_run = mocker.patch(
+        mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
         mocker.patch("builtins.print")
@@ -481,7 +475,7 @@ class TestCommandExecutorEndToEnd:
         mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
         )
-        mock_run = mocker.patch(
+        mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
         mocker.patch("builtins.print")
@@ -521,13 +515,15 @@ class TestCommandExecutorEndToEnd:
         """Test _build_inactive_gamescope_command when no -- separator is found."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
         )
         # Mock LD_PRELOAD functions to return False
         mocker.patch(
             "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
-            return_value=False
+            return_value=False,
         )
+
         # Use monkeypatch to properly mock os.environ.get
         def mock_environ_get(key, default=None):
             if key == "LD_PRELOAD":
@@ -537,6 +533,7 @@ class TestCommandExecutorEndToEnd:
             else:
                 # For all other keys, return the default value
                 return default if default is not None else ""
+
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         args = ["-f", "-W", "1920"]  # No -- separator
@@ -546,17 +543,21 @@ class TestCommandExecutorEndToEnd:
         assert "gamescope -f -W 1920" in result
         assert "--" not in result  # No separator should be present
 
-    def test_build_inactive_gamescope_command_no_separator_with_exports(self, mocker, monkeypatch):
+    def test_build_inactive_gamescope_command_no_separator_with_exports(
+        self, mocker, monkeypatch
+    ):
         """Test _build_inactive_gamescope_command when no -- separator but with exports."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
         )
         # Mock LD_PRELOAD functions to return False
         mocker.patch(
             "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
-            return_value=False
+            return_value=False,
         )
+
         # Use monkeypatch to properly mock os.environ.get
         def mock_environ_get(key, default=None):
             if key == "LD_PRELOAD":
@@ -566,14 +567,19 @@ class TestCommandExecutorEndToEnd:
             else:
                 # For all other keys, return the default value
                 return default if default is not None else ""
+
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         args = ["-f", "-W", "1920"]  # No -- separator
         exports = {"TEST_VAR": "test_value"}
-        result = CommandExecutor._build_inactive_gamescope_command(args, "", "", exports)
+        result = CommandExecutor._build_inactive_gamescope_command(
+            args, "", "", exports
+        )
 
         # Should build a command that executes exports and then gamescope
-        assert "env TEST_VAR=test_value true" in result  # Export command (shlex.quote doesn't add quotes for simple values)
+        assert (
+            "env TEST_VAR=test_value true" in result
+        )  # Export command (shlex.quote doesn't add quotes for simple values)
         assert "gamescope -f -W 1920" in result  # Gamescope command
 
     def test_build_active_gamescope_command_no_separator(self, mocker, monkeypatch):
@@ -585,8 +591,9 @@ class TestCommandExecutorEndToEnd:
         # Mock LD_PRELOAD functions to return False
         mocker.patch(
             "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
-            return_value=False
+            return_value=False,
         )
+
         # Use monkeypatch to properly mock os.environ.get
         def mock_environ_get(key, default=None):
             if key == "LD_PRELOAD":
@@ -596,6 +603,7 @@ class TestCommandExecutorEndToEnd:
             else:
                 # For all other keys, return the default value
                 return default if default is not None else ""
+
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         args = ["-f", "-W", "1920"]  # No -- separator
@@ -604,7 +612,9 @@ class TestCommandExecutorEndToEnd:
         # Should return empty string when no pre/post commands and no app args
         assert result == ""
 
-    def test_build_active_gamescope_command_no_separator_with_exports(self, mocker, monkeypatch):
+    def test_build_active_gamescope_command_no_separator_with_exports(
+        self, mocker, monkeypatch
+    ):
         """Test _build_active_gamescope_command when no -- separator but with exports."""
         # Mock environment detection
         mocker.patch(
@@ -613,8 +623,9 @@ class TestCommandExecutorEndToEnd:
         # Mock LD_PRELOAD functions to return False
         mocker.patch(
             "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
-            return_value=False
+            return_value=False,
         )
+
         # Use monkeypatch to properly mock os.environ.get
         def mock_environ_get(key, default=None):
             if key == "LD_PRELOAD":
@@ -624,6 +635,7 @@ class TestCommandExecutorEndToEnd:
             else:
                 # For all other keys, return the default value
                 return default if default is not None else ""
+
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         args = ["-f", "-W", "1920"]  # No -- separator
@@ -643,7 +655,7 @@ class TestCommandExecutorEndToEnd:
         # Mock build command to return empty string
         mocker.patch(
             "nscb.command_executor.CommandExecutor._build_active_gamescope_command",
-            return_value=""
+            return_value="",
         )
 
         result = CommandExecutor.execute_gamescope_command(["-f", "-W", "1920"])
@@ -655,13 +667,15 @@ class TestCommandExecutorEndToEnd:
         """Test execute_gamescope_command when LD_PRELOAD is present and should be handled."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
         )
         # Mock LD_PRELOAD functions to return True so LD_PRELOAD is handled
         mocker.patch(
             "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
-            return_value=False
+            return_value=False,
         )
+
         # Use monkeypatch to mock os.environ.get to return an LD_PRELOAD value
         def mock_environ_get(key, default=None):
             if key == "LD_PRELOAD":
@@ -670,6 +684,7 @@ class TestCommandExecutorEndToEnd:
                 return ""  # So debug_log doesn't output anything
             else:
                 return default if default is not None else ""
+
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         # Mock run_nonblocking to capture the command that would be executed
@@ -686,21 +701,25 @@ class TestCommandExecutorEndToEnd:
 
         # Should include env -u LD_PRELOAD for gamescope and preserve LD_PRELOAD for app
         assert "env -u LD_PRELOAD gamescope" in call_args
-        assert 'env LD_PRELOAD=/path/to/library.so testapp' in call_args
+        assert "env LD_PRELOAD=/path/to/library.so testapp" in call_args
 
         assert result == 0
 
-    def test_execute_gamescope_command_with_ld_preload_disabled_by_env(self, mocker, monkeypatch):
+    def test_execute_gamescope_command_with_ld_preload_disabled_by_env(
+        self, mocker, monkeypatch
+    ):
         """Test execute_gamescope_command when LD_PRELOAD wrapping is disabled via environment."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
         )
         # Mock LD_PRELOAD functions to return True to disable LD_PRELOAD wrapping
         mocker.patch(
             "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
-            return_value=True  # Disable LD_PRELOAD wrapping
+            return_value=True,  # Disable LD_PRELOAD wrapping
         )
+
         # Use monkeypatch to mock os.environ.get to return an LD_PRELOAD value
         def mock_environ_get(key, default=None):
             if key == "LD_PRELOAD":
@@ -711,6 +730,7 @@ class TestCommandExecutorEndToEnd:
                 return "1"  # This is what would disable LD_PRELOAD wrapping
             else:
                 return default if default is not None else ""
+
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         # Mock run_nonblocking to capture the command that would be executed
@@ -732,17 +752,21 @@ class TestCommandExecutorEndToEnd:
 
         assert result == 0
 
-    def test_execute_gamescope_command_with_ld_preload_disabled_by_faugus(self, mocker, monkeypatch):
+    def test_execute_gamescope_command_with_ld_preload_disabled_by_faugus(
+        self, mocker, monkeypatch
+    ):
         """Test execute_gamescope_command when LD_PRELOAD wrapping is disabled via FAUGUS_LOG."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
         )
         # Mock LD_PRELOAD functions to return True to disable LD_PRELOAD wrapping
         mocker.patch(
             "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
-            return_value=True  # Disable LD_PRELOAD wrapping
+            return_value=True,  # Disable LD_PRELOAD wrapping
         )
+
         # Use monkeypatch to mock os.environ.get to return an LD_PRELOAD value and FAUGUS_LOG
         def mock_environ_get(key, default=None):
             if key == "LD_PRELOAD":
@@ -753,6 +777,7 @@ class TestCommandExecutorEndToEnd:
                 return "1"  # This disables LD_PRELOAD wrapping automatically
             else:
                 return default if default is not None else ""
+
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         # Mock run_nonblocking to capture the command that would be executed

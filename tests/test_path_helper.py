@@ -1,15 +1,9 @@
 """Tests for the path helper functionality in NeoscopeBuddy."""
 
-import os
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
-
-# Add the parent directory to the path so we can import nscb modules
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir / "src"))
 
 from nscb.application import Application
 from nscb.config_manager import ConfigManager
@@ -109,6 +103,28 @@ class TestPathHelperUnit:
         """Test executable exists when PATH is empty."""
         mocker.patch("os.environ.get", return_value="")
         assert PathHelper.executable_exists("any_executable") is False
+
+    @pytest.mark.parametrize(
+        "path_env,access_result,expected",
+        [
+            ("", False, False),  # Empty PATH
+            ("/nonexistent", False, False),  # Non-existent path
+            ("/usr/bin", True, True),  # Valid path with access
+        ],
+    )
+    def test_executable_exists_parametrized(
+        self, mocker, path_env, access_result, expected
+    ):
+        """Test executable_exists with different PATH environments using parametrization."""
+        mocker.patch.dict("os.environ", {"PATH": path_env}, clear=True)
+        if path_env:  # Only mock file system if there's a path to check
+            mocker.patch.object(Path, "exists", return_value=access_result)
+            mocker.patch.object(Path, "is_file", return_value=access_result)
+            mocker.patch.object(Path, "is_dir", return_value=True)
+            mocker.patch("os.access", return_value=access_result)
+
+        result = PathHelper.executable_exists("test_executable")
+        assert result == expected
 
     def test_executable_exists_no_exec_permission(self, mocker, tmp_path):
         """Test executable exists returns False when file exists but no exec permission."""
