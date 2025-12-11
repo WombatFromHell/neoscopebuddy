@@ -37,16 +37,23 @@ install: $(OUT)
 	echo "Installed to $$INSTALL_DIR/nscb.pyz"
 
 test:
-	uv run pytest -xvs --cov=src --cov-report=term-missing
+	uv run pytest -xvs --cov=src --cov-report=term-missing --cov-branch
+
+lint:
+	ruff check --select I ./src ./tests --fix; \
+		pyright ./src ./tests
+
+prettier:
+	prettier --cache -c -w *.md
+
+format: prettier
+	ruff format ./src ./tests
 
 radon:
 	uv run radon cc ./src -a
 
-quality:
-	ruff check --select I --fix ./src ./tests; \
-		ruff format ./src ./tests; \
-		pyright ./src ./tests
+quality: lint format
 
 all: clean build install
 
-.PHONY: all clean install
+.PHONY: all clean install build test lint format radon quality

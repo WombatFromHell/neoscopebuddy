@@ -1,6 +1,6 @@
 [project]
 name = "neoscopebuddy"
-version = "1.1.0"
+version = "1.1.2"
 description = "A scopebuddy-like gamescope wrapper utility written in Python"
 readme = "README.md"
 requires-python = ">=3.13"

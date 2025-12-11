@@ -9,7 +9,7 @@ from typing import TextIO, cast
 
 from .environment_helper import EnvironmentHelper
 from .system_detector import SystemDetector
-from .types import ArgsList, EnvExports, ExitCode
+from .types import ArgsList, CommandTuple, EnvExports, ExitCode
 
 
 def debug_log(message: str) -> None:
@@ -59,7 +59,7 @@ class CommandExecutor:
         return process.wait()
 
     @staticmethod
-    def get_env_commands() -> tuple[str, str]:
+    def get_env_commands() -> CommandTuple:
         """Get pre/post commands from environment."""
         return EnvironmentHelper.get_pre_post_commands()
 
@@ -274,26 +274,52 @@ class CommandExecutor:
         pre_cmd: str, post_cmd: str, exports: EnvExports
     ) -> str:
         """Build command when no -- separator is found and gamescope is active."""
-        # Build command with exports if there are exports but no app args
+        return CommandExecutor._build_active_no_separator_command(
+            pre_cmd, post_cmd, exports
+        )
+
+    @staticmethod
+    def _build_active_no_separator_command(
+        pre_cmd: str, post_cmd: str, exports: EnvExports
+    ) -> str:
+        """Build command for active gamescope with no separator and no app args."""
         if exports:
-            # Create env command for exports
-            env_cmd_parts = ["env"] + [
-                f"{k}={shlex.quote(v)}" for k, v in exports.items()
-            ]
-            export_cmd = CommandExecutor._build_app_command(env_cmd_parts)
-            if not pre_cmd and not post_cmd:
-                # If no pre/post commands, just run exports and exit
-                return export_cmd
-            else:
-                final_command = CommandExecutor.build_command(
-                    [pre_cmd, export_cmd, post_cmd]
-                )
-                return final_command
-        elif not pre_cmd and not post_cmd:
+            return CommandExecutor._build_active_no_separator_with_exports(
+                pre_cmd, post_cmd, exports
+            )
+        else:
+            return CommandExecutor._build_active_no_separator_no_exports(
+                pre_cmd, post_cmd
+            )
+
+    @staticmethod
+    def _build_active_no_separator_with_exports(
+        pre_cmd: str, post_cmd: str, exports: EnvExports
+    ) -> str:
+        """Build command with exports when no app args are present."""
+        # Create env command for exports
+        env_cmd_parts = ["env"] + [
+            f"{k}={shlex.quote(v)}" for k, v in exports.items()
+        ]
+        export_cmd = CommandExecutor._build_app_command(env_cmd_parts)
+        
+        if not pre_cmd and not post_cmd:
+            # If no pre/post commands, just run exports and exit
+            return export_cmd
+        else:
+            # Combine pre/post commands with export command
+            return CommandExecutor.build_command([pre_cmd, export_cmd, post_cmd])
+
+    @staticmethod
+    def _build_active_no_separator_no_exports(
+        pre_cmd: str, post_cmd: str
+    ) -> str:
+        """Build command without exports when no app args are present."""
+        if not pre_cmd and not post_cmd:
             return ""
         else:
-            final_command = CommandExecutor.build_command([pre_cmd, post_cmd])
-            return final_command
+            # Combine pre/post commands only
+            return CommandExecutor.build_command([pre_cmd, post_cmd])
 
     @staticmethod
     def _build_app_command(args: ArgsList) -> str:

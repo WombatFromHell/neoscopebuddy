@@ -77,9 +77,7 @@ class TestConfigResultUnit:
 class TestConfigResultIntegration:
     """Integration tests for ConfigResult with other modules."""
 
-    def test_config_result_config_manager_integration(
-        self, mocker, temp_config_with_content
-    ):
+    def test_config_result_config_manager_integration(self, temp_config_with_content):
         """Test ConfigResult working with ConfigManager for config loading."""
         config_data = "gaming=-f -W 1920 -H 1080\nexport DISPLAY=:0\n"
         config_path = temp_config_with_content(config_data)

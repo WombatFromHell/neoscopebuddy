@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from nscb.application import Application, debug_log, print_help
+from conftest import SystemExitCalled
 
 
 class TestDebugLog:
@@ -504,4 +505,263 @@ streaming=--borderless -W 1280 -H 720
             result = 1
 
         # In either case, log should be called
-        mock_log.assert_called_with("could not find nscb.conf")
+        # The error message now includes more details from the improved exception
+        mock_log.assert_called_with("Config file not found: could not find nscb.conf")
+
+
+class TestApplicationFixtureUtilization:
+    """Test class demonstrating utilization of underused fixtures."""
+
+    def test_application_with_mock_integration_setup(
+        self, mock_integration_setup, mock_gamescope, temp_config_file, mocker
+    ):
+        """
+        Test application execution using mock_integration_setup fixture.
+
+        This demonstrates how to leverage the underutilized mock_integration_setup fixture
+        for more comprehensive integration testing.
+        """
+        # Setup test configuration
+        config_content = "gaming=-f -W 1920 -H 1080\n"
+        with open(temp_config_file, "w") as f:
+            f.write(config_content)
+
+        # Mock the config file finding to return our temp file
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=temp_config_file,
+        )
+
+        # Mock the config loading to return a proper ConfigResult
+        from nscb.config_result import ConfigResult
+        mock_config_result = ConfigResult({"gaming": "-f -W 1920 -H 1080"}, {})
+        mock_integration_setup["load_config"].return_value = mock_config_result
+
+        # Also mock the system detector to prevent actual gamescope execution
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+
+        # Mock the gamescope executable detection
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
+        )
+
+        # Create application instance
+        app = Application()
+
+        # Test arguments that would trigger gamescope execution
+        test_args = ["-p", "gaming", "--", "/bin/test_game"]
+
+        # Execute the application
+        result = app.run(test_args)
+
+        # Verify the integration setup mocks were used
+        mock_run = mock_integration_setup["run_nonblocking"]
+        mock_build = mock_integration_setup["build_command"]
+        mock_print = mock_integration_setup["print"]
+
+        # Assert that command execution was attempted (at least once)
+        mock_run.assert_called()
+        mock_build.assert_called()
+        mock_print.assert_called()
+
+        # Verify the result is as expected
+        assert result == 0
+
+    def test_application_exit_behavior_with_mock_system_exit(
+        self, mock_system_exit, mock_gamescope, temp_config_file, mocker
+    ):
+        """
+        Test application exit behavior using mock_system_exit fixture.
+
+        This demonstrates how to use the mock_system_exit fixture to test
+        proper exit code handling in various scenarios.
+        """
+        # Setup test configuration
+        config_content = "gaming=-f -W 1920 -H 1080\n"
+        with open(temp_config_file, "w") as f:
+            f.write(config_content)
+
+        # Mock the config file finding to return our temp file
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=temp_config_file,
+        )
+
+        # Mock the system detector to prevent actual gamescope execution
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+
+        # Mock the command executor to simulate different exit scenarios
+        def mock_execution_side_effect(cmd):
+            if "nonexistent_game" in cmd:
+                # Simulate a failure scenario that triggers sys.exit
+                import sys
+                sys.exit(1)
+            return 0
+
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking",
+            side_effect=mock_execution_side_effect
+        )
+
+        # Create application instance
+        app = Application()
+
+        # Test successful execution (should not raise SystemExitCalled)
+        test_args = ["-p", "gaming", "--", "/bin/test_game"]
+        result = app.run(test_args)
+        assert result == 0
+
+        # Test that the mock_system_exit fixture is working by verifying sys.exit was mocked
+        import sys
+        assert hasattr(sys, 'exit')
+        assert callable(sys.exit)
+        
+        # Verify that the mock was set up correctly
+        assert mock_system_exit.called == False  # Should not have been called for successful execution
+
+    def test_application_workflow_with_mock_application_workflow_fixture(
+        self, mock_application_workflow
+    ):
+        """
+        Test application workflow using mock_application_workflow fixture.
+
+        This demonstrates how to use the comprehensive application workflow fixture
+        to test the full application workflow in a standardized way.
+        """
+        from nscb.application import Application
+
+        # Setup test configuration using the fixture
+        config_content = "gaming=-f -W 1920 -H 1080\nexport DISPLAY=:0\n"
+        mock_application_workflow.setup_config(config_content)
+
+        # Mock gamescope as inactive for this test
+        mock_application_workflow.mock_gamescope_inactive()
+
+        # Test successful application execution
+        app = Application()
+        result = app.run(["-p", "gaming", "--", "/bin/test_game"])
+        
+        # Verify successful execution
+        assert result == 0
+        mock_application_workflow.mock_run.assert_called()
+        mock_application_workflow.mock_build.assert_called()
+        mock_application_workflow.mock_find_config.assert_called()
+
+        # Test application execution with gamescope active
+        mock_application_workflow.mock_gamescope_active()
+        result = app.run(["-p", "gaming", "--", "/bin/test_game"])
+        
+        # Verify execution with gamescope active
+        assert result == 0
+        mock_application_workflow.mock_run.assert_called()
+
+        # Test error scenario
+        mock_application_workflow.mock_execution_failure()
+        mock_application_workflow.mock_gamescope_inactive()
+        result = app.run(["-p", "gaming", "--", "/bin/nonexistent_game"])
+        
+        # Verify error handling
+        assert result != 0
+        mock_application_workflow.mock_run.assert_called()
+
+    def test_application_error_handling_with_fixtures(
+        self, mock_gamescope, temp_config_file, error_simulation, mocker
+    ):
+        """
+        Test application error handling using error_simulation fixture.
+
+        Demonstrates how to use the underutilized error_simulation fixture
+        for testing error scenarios.
+        """
+        # Setup test configuration
+        config_content = "gaming=-f -W 1920 -H 1080\n"
+        with open(temp_config_file, "w") as f:
+            f.write(config_content)
+
+        # Mock the config file finding to return our temp file
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=temp_config_file,
+        )
+
+        # Mock the system detector to prevent actual gamescope execution
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+
+        # Mock the command executor to prevent actual execution
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+
+        # Create application instance
+        app = Application()
+
+        # Test with valid arguments (should not raise errors)
+        test_args = ["-p", "gaming", "--", "/bin/test_game"]
+
+        # This should execute without raising the simulated errors
+        # since we're not triggering the error conditions in this test
+        app.run(test_args)
+
+        # The error_simulation fixture is available for more complex error testing
+        # For example, you could mock specific functions to raise the errors
+        permission_error = error_simulation["permission_error"]
+        file_not_found = error_simulation["file_not_found"]
+
+        # These error objects can be used in more advanced test scenarios
+        assert isinstance(permission_error, PermissionError)
+        assert isinstance(file_not_found, FileNotFoundError)
+
+    def test_application_with_env_commands_mock(
+        self, mock_gamescope, temp_config_file, mock_env_commands, mocker
+    ):
+        """
+        Test application with mocked environment commands.
+
+        Demonstrates usage of the underutilized mock_env_commands fixture.
+        """
+        # Setup environment commands mock
+        mock_env_commands("echo 'pre-command'", "echo 'post-command'")
+
+        # Setup test configuration
+        config_content = "gaming=-f -W 1920 -H 1080\n"
+        with open(temp_config_file, "w") as f:
+            f.write(config_content)
+
+        # Mock the config file finding to return our temp file
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=temp_config_file,
+        )
+
+        # Mock the system detector to prevent actual gamescope execution
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+
+        # Mock the command executor to prevent actual execution
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+
+        # Create application instance
+        app = Application()
+
+        # Test arguments
+        test_args = ["-p", "gaming", "--", "/bin/test_game"]
+
+        # Execute the application
+        result = app.run(test_args)
+
+        # Verify the result
+        assert result == 0

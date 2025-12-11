@@ -13,48 +13,99 @@ from nscb.profile_manager import ProfileManager
 class TestConfigManagerUnit:
     """Unit tests for the ConfigManager class."""
 
-    def test_find_config_file_xdg_exists(self, temp_config_file, monkeypatch):
-        with open(temp_config_file, "w") as f:
-            f.write("gaming=-f -W 1920 -H 1080\n")
-
-        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_config_file.parent))
-        monkeypatch.delenv("HOME", raising=False)
-
-        result = ConfigManager.find_config_file()
-        assert result == temp_config_file
-
-    def test_find_config_file_xdg_missing_fallback(self, temp_config_file, monkeypatch):
-        home_config_dir = temp_config_file.parent
-        config_path = home_config_dir / ".config" / "nscb.conf"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, "w") as f:
-            f.write("gaming=-f -W 1920 -H 1080\n")
-
-        monkeypatch.setenv("XDG_CONFIG_HOME", "/nonexistent")
-        monkeypatch.setenv("HOME", str(home_config_dir))
-
+    def test_find_config_file_xdg_exists(self, xdg_config_scenarios):
+        """Test finding config file when XDG_CONFIG_HOME exists using xdg_config_scenarios fixture."""
+        config_path = xdg_config_scenarios["xdg_exists"]()
         result = ConfigManager.find_config_file()
         assert result == config_path
 
-    def test_find_config_file_home_only(self, temp_config_file, monkeypatch):
-        home_config_dir = temp_config_file.parent
-        config_path = home_config_dir / ".config" / "nscb.conf"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, "w") as f:
-            f.write("gaming=-f -W 1920 -H 1080\n")
-
-        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-        monkeypatch.setenv("HOME", str(home_config_dir))
-
+    def test_find_config_file_xdg_missing_fallback(self, xdg_config_scenarios):
+        """Test finding config file with XDG fallback to HOME using xdg_config_scenarios fixture."""
+        config_path = xdg_config_scenarios["home_fallback"]()
         result = ConfigManager.find_config_file()
         assert result == config_path
 
-    def test_find_config_file_no_config(self, monkeypatch):
-        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-        monkeypatch.delenv("HOME", raising=False)
+    def test_find_config_file_home_only(self, xdg_config_scenarios):
+        """Test finding config file when only HOME/.config exists using xdg_config_scenarios fixture."""
+        config_path = xdg_config_scenarios["home_only"]()
+        result = ConfigManager.find_config_file()
+        assert result == config_path
 
+    def test_find_config_file_no_config(self, xdg_config_scenarios):
+        """Test finding config file when no config exists using xdg_config_scenarios fixture."""
+        config_path = xdg_config_scenarios["no_config"]()
         result = ConfigManager.find_config_file()
         assert result is None
+
+    def test_config_file_loading_with_mock_config_file_fixture(
+        self, mock_config_file, temp_config_file
+    ):
+        """
+        Test config file loading using mock_config_file fixture.
+
+        This demonstrates how to use the mock_config_file fixture to simplify
+        config file testing by automatically handling file creation and mocking.
+        """
+        # Setup config content using the fixture
+        config_content = "gaming=-f -W 1920 -H 1080\nexport DISPLAY=:0\n"
+        mock_config = mock_config_file(config_content)
+
+        # The fixture automatically creates the file and mocks find_config_file
+        # Now we can test finding and loading the config
+        found_path = ConfigManager.find_config_file()
+        result = ConfigManager.load_config(found_path)
+
+        # Verify the config was loaded correctly
+        assert "gaming" in result.profiles
+        assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
+        assert "DISPLAY" in result.exports
+        assert result.exports["DISPLAY"] == ":0"
+
+        # Verify the mock was called
+        mock_config.assert_called_once()
+
+    def test_config_parsing_with_standard_content_using_test_config_content(
+        self, test_config_content, temp_config_with_content
+    ):
+        """
+        Test config parsing using test_config_content fixture.
+
+        This demonstrates how to use the test_config_content fixture to test
+        various configuration parsing scenarios with standard content.
+        """
+        # Test basic config parsing
+        basic_config = test_config_content["basic"]
+        config_path = temp_config_with_content(basic_config)
+        result = ConfigManager.load_config(config_path)
+        
+        assert "gaming" in result.profiles
+        assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
+        assert "streaming" in result.profiles
+        assert result.profiles["streaming"] == "--borderless -W 1280 -H 720"
+
+        # Test config with exports
+        exports_config = test_config_content["with_exports"]
+        config_path = temp_config_with_content(exports_config)
+        result = ConfigManager.load_config(config_path)
+        
+        assert "gaming" in result.profiles
+        assert "DISPLAY" in result.exports
+        assert result.exports["DISPLAY"] == ":0"
+        assert "MANGOHUD" in result.exports
+        assert result.exports["MANGOHUD"] == "1"
+
+        # Test complex config with comments and quotes
+        complex_config = test_config_content["complex"]
+        config_path = temp_config_with_content(complex_config)
+        result = ConfigManager.load_config(config_path)
+        
+        assert "gaming" in result.profiles
+        assert "streaming" in result.profiles
+        assert "portable" in result.profiles
+        assert "DISPLAY" in result.exports
+        assert "MANGOHUD" in result.exports
+        assert "CUSTOM_VAR" in result.exports
+        assert result.exports["CUSTOM_VAR"] == "value with spaces"
 
     def test_find_config_file_permission_error(self, mocker, monkeypatch):
         mocker.patch.object(Path, "exists", return_value=False)
@@ -182,6 +233,187 @@ class TestConfigManagerUnit:
         assert result.exports == expected_exports
 
 
+class TestConfigManagerSecurity:
+    """Security and validation tests for ConfigManager."""
+
+    def test_file_size_validation(self, temp_config_file):
+        """Test that large config files are rejected (DoS prevention)."""
+        # Create a file larger than 10MB
+        large_content = "a" * (11 * 1024 * 1024)  # 11MB
+        with open(temp_config_file, "w") as f:
+            f.write(large_content)
+
+        with pytest.raises(Exception) as exc_info:
+            ConfigManager.load_config(temp_config_file)
+
+        assert "Config file too large" in str(exc_info.value)
+
+    def test_line_length_validation(self, temp_config_file):
+        """Test that excessively long lines are rejected."""
+        # Create a line longer than 10KB
+        long_line = "b" * 10001 + "=value\n"
+        with open(temp_config_file, "w") as f:
+            f.write(long_line)
+
+        with pytest.raises(Exception) as exc_info:
+            ConfigManager.load_config(temp_config_file)
+
+        assert "Line too long" in str(exc_info.value)
+
+    def test_invalid_env_var_names(self, temp_config_file):
+        """Test validation of environment variable names."""
+        invalid_names = [
+            "123invalid",  # Starts with number
+            "invalid-name",  # Contains hyphen
+            "invalid name",  # Contains space
+            "PATH",  # Reserved name
+            "HOME",  # Reserved name
+            "LD_PRELOAD",  # Reserved name
+            "NSCB_VAR",  # Reserved prefix
+        ]
+
+        for invalid_name in invalid_names:
+            with open(temp_config_file, "w") as f:
+                f.write(f"export {invalid_name}=value\n")
+
+            with pytest.raises(Exception) as exc_info:
+                ConfigManager.load_config(temp_config_file)
+
+            assert "Invalid environment variable name" in str(exc_info.value)
+
+    def test_invalid_profile_names(self, temp_config_file):
+        """Test validation of profile names."""
+        invalid_names = [
+            "invalid name",  # Contains space
+            "invalid/name",  # Contains slash
+            "help",  # Reserved name (case insensitive)
+            "HELP",  # Reserved name (case insensitive)
+            "debug",  # Reserved name
+            "DEBUG",  # Reserved name
+            "test",  # Reserved name
+            "config",  # Reserved name
+            "export",  # Reserved name
+            "env",  # Reserved name
+        ]
+
+        for invalid_name in invalid_names:
+            with open(temp_config_file, "w") as f:
+                f.write(f"{invalid_name}=-f\n")
+
+            with pytest.raises(Exception) as exc_info:
+                ConfigManager.load_config(temp_config_file)
+
+            assert "Invalid profile name" in str(exc_info.value)
+
+    def test_empty_key_handling(self, temp_config_file):
+        """Test handling of empty keys in config."""
+        with open(temp_config_file, "w") as f:
+            f.write("=value\n")
+
+        # Should handle gracefully without raising exception
+        result = ConfigManager.load_config(temp_config_file)
+        assert result.profiles == {}  # Empty keys should be ignored
+
+    def test_unicode_decode_error(self, temp_config_file):
+        """Test handling of Unicode decode errors."""
+        # Write invalid UTF-8 content
+        with open(temp_config_file, "wb") as f:
+            f.write(b"\xff\xfeinvalid utf-8 content\n")
+
+        with pytest.raises(Exception) as exc_info:
+            ConfigManager.load_config(temp_config_file)
+
+        assert "Invalid file encoding" in str(exc_info.value)
+
+    def test_command_injection_detection(self, temp_config_file):
+        """Test detection of command injection attempts."""
+        dangerous_values = [
+            "value; rm -rf /",
+            "value && echo hacked",
+            "value || exit 1",
+            "value `whoami`",
+            "value $(whoami)",
+            "value ${HOME}",
+        ]
+
+        for dangerous_value in dangerous_values:
+            with open(temp_config_file, "w") as f:
+                f.write(f"profile={dangerous_value}\n")
+
+            # Command injection attempts should be skipped gracefully
+            result = ConfigManager.load_config(temp_config_file)
+            assert result.profiles == {}  # Invalid entries are skipped
+
+    def test_reserved_env_var_names(self, temp_config_file):
+        """Test that reserved environment variable names are rejected."""
+        reserved_vars = ["PATH", "HOME", "USER", "SHELL", "LD_PRELOAD"]
+
+        for var_name in reserved_vars:
+            with open(temp_config_file, "w") as f:
+                f.write(f"export {var_name}=value\n")
+
+            with pytest.raises(Exception) as exc_info:
+                ConfigManager.load_config(temp_config_file)
+
+            assert "Invalid environment variable name" in str(exc_info.value)
+
+    def test_reserved_profile_names(self, temp_config_file):
+        """Test that reserved profile names are rejected."""
+        reserved_profiles = ["help", "debug", "test", "config", "export", "env"]
+
+        for profile_name in reserved_profiles:
+            with open(temp_config_file, "w") as f:
+                f.write(f"{profile_name}=-f\n")
+
+            with pytest.raises(Exception) as exc_info:
+                ConfigManager.load_config(temp_config_file)
+
+            assert "Invalid profile name" in str(exc_info.value)
+
+    def test_nscb_prefix_reserved(self, temp_config_file):
+        """Test that NSCB_ prefix is reserved for environment variables."""
+        with open(temp_config_file, "w") as f:
+            f.write("export NSCB_CUSTOM_VAR=value\n")
+
+        with pytest.raises(Exception) as exc_info:
+            ConfigManager.load_config(temp_config_file)
+
+        assert "Invalid environment variable name" in str(exc_info.value)
+
+    def test_quoted_profile_names(self, temp_config_file):
+        """Test handling of quoted profile names."""
+        with open(temp_config_file, "w") as f:
+            f.write('"quoted-profile"=-f\n')
+            f.write("'another-profile'=--borderless\n")
+
+        result = ConfigManager.load_config(temp_config_file)
+        assert "quoted-profile" in result.profiles
+        assert "another-profile" in result.profiles
+
+    def test_malformed_export_lines(self, temp_config_file):
+        """Test handling of malformed export lines."""
+        with open(temp_config_file, "w") as f:
+            f.write("export\n")  # No variable name
+            f.write("export =")  # No variable name
+            f.write("export VAR")  # No equals sign
+
+        # These should raise exceptions as expected
+        with pytest.raises(Exception):
+            ConfigManager.load_config(temp_config_file)
+
+    def test_mixed_valid_invalid_config(self, temp_config_file):
+        """Test that invalid entries cause the entire config to fail."""
+        with open(temp_config_file, "w") as f:
+            f.write("valid_profile=-f\n")
+            f.write("export VALID_VAR=value\n")
+            f.write("invalid_profile_name=-f\n")  # This should cause failure
+            f.write("export 123INVALID=value\n")  # This should cause failure
+
+        # Should raise exception due to invalid entries
+        with pytest.raises(Exception):
+            ConfigManager.load_config(temp_config_file)
+
+
 class TestConfigResultUnit:
     """Unit tests for the ConfigResult container."""
 
@@ -249,7 +481,7 @@ class TestConfigManagerIntegration:
         assert config.profiles["performance"] == "-f -W 2560 -H 1440 --mangoapp"
 
         # Now test with real ProfileManager
-        profiles, remaining_args = ProfileManager.parse_profile_args(
+        profiles, _remaining_args = ProfileManager.parse_profile_args(
             ["-p", "performance", "--borderless", "--", "app"]
         )
         assert profiles == ["performance"]

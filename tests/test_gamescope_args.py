@@ -96,7 +96,9 @@ class TestGamescopeArgsMapIntegration:
         """Test gamescope args integration with argument processor."""
         # Test with a mix of mapped and unmapped args
         test_args = ["-f", "-W", "1920", "--mangoapp", "--unknown-flag"]
-        flags, positionals = ArgumentProcessor.separate_flags_and_positionals(test_args)
+        flags, _positionals = ArgumentProcessor.separate_flags_and_positionals(
+            test_args
+        )
 
         # All arguments should be processed correctly
         _flag_dict = {flag: value for flag, value in flags}

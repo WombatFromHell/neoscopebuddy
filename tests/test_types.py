@@ -175,7 +175,7 @@ class TestTypesIntegration:
         assert all(isinstance(profile_args, list) for profile_args in profile_args_list)
 
         # FlagTuple type usage
-        flags, positionals = ArgumentProcessor.separate_flags_and_positionals(
+        flags, _positionals = ArgumentProcessor.separate_flags_and_positionals(
             ["-W", "1920", "game.exe"]
         )
         assert isinstance(flags, list)
@@ -263,7 +263,7 @@ export PROTON_ENABLE_FSR=1
         assert len(args_list) > 0
 
         # Process with ArgumentProcessor to test FlagTuple creation
-        flags, positionals = ArgumentProcessor.separate_flags_and_positionals(
+        flags, _positionals = ArgumentProcessor.separate_flags_and_positionals(
             args_list[:-3]
         )  # Exclude separator and after
         assert isinstance(flags, list)

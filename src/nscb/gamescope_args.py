@@ -1,6 +1,8 @@
 """Gamescope argument mappings for NeoscopeBuddy."""
 
-GAMESCOPE_ARGS_MAP = {
+from typing import Final
+
+GAMESCOPE_ARGS_MAP: Final[dict[str, str]] = {
     "-W": "--output-width",
     "-H": "--output-height",
     "-w": "--nested-width",

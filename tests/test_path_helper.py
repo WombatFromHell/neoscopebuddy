@@ -246,7 +246,7 @@ class TestPathHelperEndToEnd:
             ("/nonexistent", False, False),
         ]
 
-        for path_env, mock_exists, expected_result in test_cases:
+        for path_env, mock_exists, _expected_result in test_cases:
             mocker.patch.dict("os.environ", {"PATH": path_env}, clear=True)
             if path_env:  # Only mock file system if there's a path to check
                 mocker.patch.object(Path, "exists", return_value=mock_exists)

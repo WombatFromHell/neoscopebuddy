@@ -4,6 +4,8 @@ import os
 import subprocess
 import sys
 
+from .types import CommandTuple
+
 
 def debug_log(message: str) -> None:
     """Log debug message when NSCB_DEBUG=1 is set."""
@@ -15,7 +17,7 @@ class EnvironmentHelper:
     """Utility class for environment variable operations."""
 
     @staticmethod
-    def get_pre_post_commands() -> tuple[str, str]:
+    def get_pre_post_commands() -> CommandTuple:
         """Get pre/post commands from environment."""
         # Check new variable names first, then fall back to legacy names
         pre_cmd = os.environ.get("NSCB_PRE_CMD") or os.environ.get("NSCB_PRECMD", "")

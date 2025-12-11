@@ -15,9 +15,10 @@ class ProfileManager:
     """Manages profile parsing and merging functionality."""
 
     @staticmethod
-    def parse_profile_args(args: ArgsList) -> tuple[ArgsList, ArgsList]:
+    def parse_profile_args(args: ArgsList) -> tuple[list[str], list[str]]:
         """Extract profiles and remaining args from command line."""
-        profiles, rest = [], []
+        profiles: list[str] = []
+        rest: list[str] = []
         i = 0
         while i < len(args):
             arg = args[i]
@@ -47,7 +48,7 @@ class ProfileManager:
         return profiles, rest
 
     @staticmethod
-    def merge_arguments(profile_args: ArgsList, override_args: ArgsList) -> ArgsList:
+    def merge_arguments(profile_args: ArgsList, override_args: ArgsList) -> list[str]:
         """
         Merge a profile argument list with an override argument list.
 
@@ -184,7 +185,7 @@ class ProfileManager:
         return result
 
     @staticmethod
-    def merge_multiple_profiles(profile_args_list: ProfileArgsList) -> ArgsList:
+    def merge_multiple_profiles(profile_args_list: ProfileArgsList) -> list[str]:
         """Merge multiple profile argument lists."""
         if not profile_args_list:
             return []

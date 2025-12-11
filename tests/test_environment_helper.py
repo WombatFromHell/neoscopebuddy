@@ -400,7 +400,7 @@ class TestEnvironmentHelperEndToEnd:
             assert "myapp" in called_cmd
             assert "after" in called_cmd
 
-    def test_should_disable_ld_preload_wrap_e2e_with_faugus_launcher(self, mocker):
+    def test_should_disable_ld_preload_wrap_e2e_with_faugus_launcher(self):
         """Test LD_PRELOAD wrapping disable behavior with faugus-launcher scenario."""
         original_env = dict(os.environ)
 
@@ -432,3 +432,83 @@ class TestEnvironmentHelperEndToEnd:
             # Restore original environment
             os.environ.clear()
             os.environ.update(original_env)
+
+
+class TestEnvironmentHelperFixtureUtilization:
+    """Test class demonstrating utilization of environment helper fixtures."""
+
+    def test_environment_variables_with_fixtures(
+        self, mock_environment_variables, monkeypatch
+    ):
+        """
+        Test environment variable handling using mock_environment_variables fixture.
+
+        This demonstrates how to use the environment variables fixture to test
+        various environment scenarios in a standardized way.
+        """
+        from nscb.environment_helper import EnvironmentHelper
+
+        # Test basic environment scenario
+        basic_vars = mock_environment_variables["basic"]
+        for var, value in basic_vars.items():
+            monkeypatch.setenv(var, value)
+        
+        # Verify environment variables are set correctly
+        assert EnvironmentHelper.get_pre_post_commands()[0] == ""
+        assert EnvironmentHelper.get_pre_post_commands()[1] == ""
+
+        # Test LD_PRELOAD scenario
+        monkeypatch.undo()  # Clear previous environment
+        ld_preload_vars = mock_environment_variables["ld_preload"]
+        for var, value in ld_preload_vars.items():
+            monkeypatch.setenv(var, value)
+        
+        # Verify LD_PRELOAD handling
+        assert EnvironmentHelper.should_disable_ld_preload_wrap() == False
+
+        # Test gamescope active scenario
+        monkeypatch.undo()  # Clear previous environment
+        gamescope_vars = mock_environment_variables["gamescope_active"]
+        for var, value in gamescope_vars.items():
+            monkeypatch.setenv(var, value)
+        
+        # Verify gamescope detection
+        assert EnvironmentHelper.is_gamescope_active() == True
+
+        # Test pre/post commands scenario
+        monkeypatch.undo()  # Clear previous environment
+        pre_post_vars = mock_environment_variables["pre_post_commands"]
+        for var, value in pre_post_vars.items():
+            monkeypatch.setenv(var, value)
+        
+        # Verify pre/post command handling
+        pre_cmd, post_cmd = EnvironmentHelper.get_pre_post_commands()
+        assert "echo 'pre command'" in pre_cmd
+        assert "echo 'post command'" in post_cmd
+
+    def test_ld_preload_scenarios_with_fixtures(
+        self, mock_ld_preload_scenarios
+    ):
+        """
+        Test LD_PRELOAD handling using mock_ld_preload_scenarios fixture.
+
+        This demonstrates how to use the LD_PRELOAD scenarios fixture to test
+        various LD_PRELOAD handling scenarios in a standardized way.
+        """
+        from nscb.environment_helper import EnvironmentHelper
+
+        # Test with LD_PRELOAD enabled
+        mock_ld_preload_scenarios["with_ld_preload"]()
+        assert EnvironmentHelper.should_disable_ld_preload_wrap() == False
+
+        # Test with LD_PRELOAD disabled by environment variable
+        mock_ld_preload_scenarios["disabled_by_env"]()
+        assert EnvironmentHelper.should_disable_ld_preload_wrap() == True
+
+        # Test with LD_PRELOAD disabled by Faugus launcher
+        mock_ld_preload_scenarios["disabled_by_faugus"]()
+        assert EnvironmentHelper.should_disable_ld_preload_wrap() == True
+
+        # Test with no LD_PRELOAD set
+        mock_ld_preload_scenarios["no_ld_preload"]()
+        assert EnvironmentHelper.should_disable_ld_preload_wrap() == False

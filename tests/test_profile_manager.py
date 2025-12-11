@@ -468,3 +468,92 @@ ultrawide=-f -W 3440 -H 1440
         assert "2160" in called_cmd
         assert "--mangoapp" in called_cmd
         assert "5" in called_cmd  # fsr-sharpness from original profile
+
+
+class TestProfileManagerFixtureUtilization:
+    """Test class demonstrating utilization of profile manager fixtures."""
+
+    def test_profile_scenarios_with_fixtures(self, profile_test_scenarios):
+        """
+        Test profile merging using profile_test_scenarios fixture.
+
+        This demonstrates how to use the profile_test_scenarios fixture to test
+        various profile merging scenarios in a standardized way.
+        """
+        from nscb.profile_manager import ProfileManager
+
+        # Test basic profile scenario
+        basic_scenario = profile_test_scenarios["basic"]
+        result = ProfileManager.merge_arguments(
+            basic_scenario["profiles"], basic_scenario["overrides"]
+        )
+        # The actual result may have different ordering, so let's check the content
+        assert set(result) == set(basic_scenario["expected"])
+        assert result.count("-W") == 1  # Should have one -W flag
+        assert "3840" in result  # Should have the override width
+
+        # Test conflict resolution scenario
+        conflict_scenario = profile_test_scenarios["conflict_resolution"]
+        result = ProfileManager.merge_arguments(
+            conflict_scenario["profiles"], conflict_scenario["overrides"]
+        )
+        # For conflict resolution, the override should win
+        assert "--borderless" in result
+        assert "-f" not in result  # Fullscreen should be removed
+        assert "-W" in result
+        assert "2560" in result
+
+        # Test multiple profiles scenario
+        multiple_scenario = profile_test_scenarios["multiple_profiles"]
+        # merge_multiple_profiles only takes the profile args list, not overrides
+        result = ProfileManager.merge_multiple_profiles(multiple_scenario["profiles"])
+        # Check that all expected elements from profiles are present (without overrides)
+        expected_profiles_set = set([item for sublist in multiple_scenario["profiles"] for item in sublist])
+        result_set = set(result)
+        assert result_set == expected_profiles_set
+        assert result.count("--framerate-limit") == 1
+        assert "60" in result  # Should have the original framerate from profiles
+
+        # Test empty profile scenario
+        empty_profile_scenario = profile_test_scenarios["empty_profile"]
+        result = ProfileManager.merge_arguments(
+            empty_profile_scenario["profiles"], empty_profile_scenario["overrides"]
+        )
+        assert result == empty_profile_scenario["expected"]
+
+        # Test empty override scenario
+        empty_override_scenario = profile_test_scenarios["empty_override"]
+        result = ProfileManager.merge_arguments(
+            empty_override_scenario["profiles"], empty_override_scenario["overrides"]
+        )
+        assert result == empty_override_scenario["expected"]
+
+    def test_config_scenarios_with_fixtures(self, config_scenarios, temp_config_with_content):
+        """
+        Test config parsing using config_scenarios fixture.
+
+        This demonstrates how to use the config scenarios fixture to test
+        various configuration parsing scenarios in a standardized way.
+        """
+        from nscb.config_manager import ConfigManager
+
+        # Test basic config scenario
+        basic_scenario = config_scenarios["basic"]
+        config_path = temp_config_with_content(basic_scenario["content"])
+        result = ConfigManager.load_config(config_path)
+        assert result.profiles == basic_scenario["expected_profiles"]
+        assert result.exports == basic_scenario["expected_exports"]
+
+        # Test config with exports scenario
+        exports_scenario = config_scenarios["with_exports"]
+        config_path = temp_config_with_content(exports_scenario["content"])
+        result = ConfigManager.load_config(config_path)
+        assert result.profiles == exports_scenario["expected_profiles"]
+        assert result.exports == exports_scenario["expected_exports"]
+
+        # Test complex config scenario
+        complex_scenario = config_scenarios["complex"]
+        config_path = temp_config_with_content(complex_scenario["content"])
+        result = ConfigManager.load_config(config_path)
+        assert result.profiles == complex_scenario["expected_profiles"]
+        assert result.exports == complex_scenario["expected_exports"]

@@ -116,7 +116,7 @@ class TestSystemDetectorUnit:
 class TestSystemDetectorIntegration:
     """Integration tests for the SystemDetector with other modules."""
 
-    def test_system_detector_path_helper_integration(self, mocker):
+    def test_system_detector_path_helper_integration(self):
         """Test SystemDetector working with PathHelper for executable detection."""
         # Test that SystemDetector uses PathHelper functionality
         test_executable = "test_exe"
@@ -250,3 +250,56 @@ class TestSystemDetectorEndToEnd:
         call_args = mock_run.call_args[0][0]
         # When in gamescope, should not run gamescope again but run the app directly
         assert "test_game" in call_args
+
+
+class TestSystemDetectorFixtureUtilization:
+    """Test class demonstrating utilization of system detection fixtures."""
+
+    def test_system_detection_scenarios_with_fixtures(
+        self, mock_system_detection_scenarios
+    ):
+        """
+        Test system detection using mock_system_detection_scenarios fixture.
+
+        This demonstrates how to use the system detection scenarios fixture
+        to test various system detection scenarios in a standardized way.
+        """
+        from nscb.system_detector import SystemDetector
+
+        # Test gamescope active scenario
+        mock_system_detection_scenarios["gamescope_active"]()
+        assert SystemDetector.is_gamescope_active() == True
+
+        # Test gamescope inactive scenario
+        mock_system_detection_scenarios["gamescope_inactive"]()
+        assert SystemDetector.is_gamescope_active() == False
+
+        # Test executable found scenario
+        mock_system_detection_scenarios["executable_found"]()
+        assert SystemDetector.find_executable("gamescope") == True
+
+        # Test executable not found scenario
+        mock_system_detection_scenarios["executable_not_found"]()
+        assert SystemDetector.find_executable("nonexistent") == False
+
+    def test_simple_gamescope_detection_with_mock_is_gamescope_active(
+        self, mock_is_gamescope_active
+    ):
+        """
+        Test simple gamescope detection using mock_is_gamescope_active fixture.
+
+        This demonstrates how to use the simple mock_is_gamescope_active fixture
+        for basic gamescope active state testing.
+        """
+        from nscb.system_detector import SystemDetector
+
+        # Test mocking gamescope as active
+        mock_is_gamescope_active.return_value = True
+        assert SystemDetector.is_gamescope_active() == True
+        mock_is_gamescope_active.assert_called_once()
+
+        # Test mocking gamescope as inactive
+        mock_is_gamescope_active.return_value = False
+        assert SystemDetector.is_gamescope_active() == False
+        # Should be called twice total now
+        assert mock_is_gamescope_active.call_count == 2

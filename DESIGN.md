@@ -151,6 +151,29 @@ src/
   export CUSTOM_VAR="value with spaces"
   ```
 
+### Security and Validation
+
+The configuration system implements comprehensive security measures:
+
+1. **File Size Validation**: Rejects config files larger than 10MB to prevent DoS attacks
+2. **Line Length Validation**: Rejects individual lines longer than 10KB to prevent excessively long lines
+3. **Environment Variable Name Validation**: Only allows alphanumeric characters and underscores, prevents reserved names (PATH, HOME, USER, SHELL, LD*PRELOAD, NSCB*)
+4. **Profile Name Validation**: Only allows alphanumeric characters, underscores, and hyphens, prevents reserved names (help, debug, test, config, export, env)
+5. **Command Injection Prevention**: Detects and blocks dangerous patterns like `;`, `&&`, `||`, `` ` ``, `$(`, `${` in config values
+6. **Unicode Decode Error Handling**: Properly handles invalid file encodings
+7. **Graceful Error Handling**: Invalid entries are skipped to preserve valid configuration data
+
+### Reserved Names
+
+**Environment Variables**: The following environment variable names are reserved and cannot be used in export statements:
+
+- `PATH`, `HOME`, `USER`, `SHELL`, `LD_PRELOAD`
+- Any variable starting with `NSCB_` prefix
+
+**Profile Names**: The following profile names are reserved and cannot be used:
+
+- `help`, `debug`, `test`, `config`, `export`, `env` (case-insensitive)
+
 ## Configuration and Argument System
 
 ### Gamescope Arguments Mapping
@@ -457,6 +480,12 @@ The codebase defines the following type aliases for better readability:
   - `NscbError`: Base exception for nscb errors
   - `ConfigNotFoundError`: Raised when config file cannot be found
   - `ProfileNotFoundError`: Raised when a specified profile is not found in config
+  - `InvalidConfigError`: Raised when config file has invalid format or content (includes line numbers and detailed error messages)
+  - `ExecutableNotFoundError`: Raised when required executable cannot be found in PATH
+  - `CommandExecutionError`: Raised when command execution fails (includes exit codes and stderr output)
+  - `ArgumentParseError`: Raised when argument parsing fails
+  - `GamescopeActiveError`: Raised when gamescope is already active and should not be nested
+  - `EnvironmentVariableError`: Raised when environment variable handling fails
 
 ### Testing Approach
 

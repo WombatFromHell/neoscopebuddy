@@ -1,13 +1,13 @@
 """Argument parsing and manipulation functionality for NeoscopeBuddy."""
 
-from .types import ArgsList, FlagTuple
+from .types import ArgsList, FlagTuple, SeparatedArgs, SplitResult
 
 
 class ArgumentProcessor:
     """Handles argument parsing and manipulation."""
 
     @staticmethod
-    def split_at_separator(args: ArgsList) -> tuple[ArgsList, ArgsList]:
+    def split_at_separator(args: ArgsList) -> SplitResult:
         """Split arguments at '--' separator."""
         if "--" in args:
             idx = args.index("--")
@@ -17,7 +17,7 @@ class ArgumentProcessor:
     @staticmethod
     def separate_flags_and_positionals(
         args: ArgsList,
-    ) -> tuple[list[FlagTuple], ArgsList]:
+    ) -> SeparatedArgs:
         """
         Split arguments into (flags, positionals).
 
