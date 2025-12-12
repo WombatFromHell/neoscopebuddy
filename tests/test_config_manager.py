@@ -33,7 +33,7 @@ class TestConfigManagerUnit:
 
     def test_find_config_file_no_config(self, xdg_config_scenarios):
         """Test finding config file when no config exists using xdg_config_scenarios fixture."""
-        config_path = xdg_config_scenarios["no_config"]()
+        xdg_config_scenarios["no_config"]()
         result = ConfigManager.find_config_file()
         assert result is None
 
@@ -53,13 +53,19 @@ class TestConfigManagerUnit:
         # The fixture automatically creates the file and mocks find_config_file
         # Now we can test finding and loading the config
         found_path = ConfigManager.find_config_file()
-        result = ConfigManager.load_config(found_path)
+        if found_path:
+            result = ConfigManager.load_config(found_path)
+        else:
+            result = None
 
         # Verify the config was loaded correctly
-        assert "gaming" in result.profiles
-        assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
-        assert "DISPLAY" in result.exports
-        assert result.exports["DISPLAY"] == ":0"
+        if result:
+            assert "gaming" in result.profiles
+            assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
+            assert "DISPLAY" in result.exports
+            assert result.exports["DISPLAY"] == ":0"
+        else:
+            assert False, "Config file should have been found"
 
         # Verify the mock was called
         mock_config.assert_called_once()
@@ -77,7 +83,7 @@ class TestConfigManagerUnit:
         basic_config = test_config_content["basic"]
         config_path = temp_config_with_content(basic_config)
         result = ConfigManager.load_config(config_path)
-        
+
         assert "gaming" in result.profiles
         assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
         assert "streaming" in result.profiles
@@ -87,7 +93,7 @@ class TestConfigManagerUnit:
         exports_config = test_config_content["with_exports"]
         config_path = temp_config_with_content(exports_config)
         result = ConfigManager.load_config(config_path)
-        
+
         assert "gaming" in result.profiles
         assert "DISPLAY" in result.exports
         assert result.exports["DISPLAY"] == ":0"
@@ -98,7 +104,7 @@ class TestConfigManagerUnit:
         complex_config = test_config_content["complex"]
         config_path = temp_config_with_content(complex_config)
         result = ConfigManager.load_config(config_path)
-        
+
         assert "gaming" in result.profiles
         assert "streaming" in result.profiles
         assert "portable" in result.profiles

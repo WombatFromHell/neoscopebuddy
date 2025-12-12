@@ -1,7 +1,5 @@
 """Config result container for NeoscopeBuddy."""
 
-from typing import Dict
-
 from .types import ConfigData, EnvExports
 
 

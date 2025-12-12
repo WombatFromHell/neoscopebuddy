@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from nscb.application import Application, debug_log, print_help
-from conftest import SystemExitCalled
 
 
 class TestDebugLog:
@@ -534,6 +533,7 @@ class TestApplicationFixtureUtilization:
 
         # Mock the config loading to return a proper ConfigResult
         from nscb.config_result import ConfigResult
+
         mock_config_result = ConfigResult({"gaming": "-f -W 1920 -H 1080"}, {})
         mock_integration_setup["load_config"].return_value = mock_config_result
 
@@ -602,12 +602,13 @@ class TestApplicationFixtureUtilization:
             if "nonexistent_game" in cmd:
                 # Simulate a failure scenario that triggers sys.exit
                 import sys
+
                 sys.exit(1)
             return 0
 
         mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking",
-            side_effect=mock_execution_side_effect
+            side_effect=mock_execution_side_effect,
         )
 
         # Create application instance
@@ -620,11 +621,14 @@ class TestApplicationFixtureUtilization:
 
         # Test that the mock_system_exit fixture is working by verifying sys.exit was mocked
         import sys
-        assert hasattr(sys, 'exit')
+
+        assert hasattr(sys, "exit")
         assert callable(sys.exit)
-        
+
         # Verify that the mock was set up correctly
-        assert mock_system_exit.called == False  # Should not have been called for successful execution
+        assert (
+            not mock_system_exit.called
+        )  # Should not have been called for successful execution
 
     def test_application_workflow_with_mock_application_workflow_fixture(
         self, mock_application_workflow
@@ -647,7 +651,7 @@ class TestApplicationFixtureUtilization:
         # Test successful application execution
         app = Application()
         result = app.run(["-p", "gaming", "--", "/bin/test_game"])
-        
+
         # Verify successful execution
         assert result == 0
         mock_application_workflow.mock_run.assert_called()
@@ -657,7 +661,7 @@ class TestApplicationFixtureUtilization:
         # Test application execution with gamescope active
         mock_application_workflow.mock_gamescope_active()
         result = app.run(["-p", "gaming", "--", "/bin/test_game"])
-        
+
         # Verify execution with gamescope active
         assert result == 0
         mock_application_workflow.mock_run.assert_called()
@@ -666,7 +670,7 @@ class TestApplicationFixtureUtilization:
         mock_application_workflow.mock_execution_failure()
         mock_application_workflow.mock_gamescope_inactive()
         result = app.run(["-p", "gaming", "--", "/bin/nonexistent_game"])
-        
+
         # Verify error handling
         assert result != 0
         mock_application_workflow.mock_run.assert_called()

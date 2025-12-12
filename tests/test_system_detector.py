@@ -268,19 +268,19 @@ class TestSystemDetectorFixtureUtilization:
 
         # Test gamescope active scenario
         mock_system_detection_scenarios["gamescope_active"]()
-        assert SystemDetector.is_gamescope_active() == True
+        assert SystemDetector.is_gamescope_active()
 
         # Test gamescope inactive scenario
         mock_system_detection_scenarios["gamescope_inactive"]()
-        assert SystemDetector.is_gamescope_active() == False
+        assert not SystemDetector.is_gamescope_active()
 
         # Test executable found scenario
         mock_system_detection_scenarios["executable_found"]()
-        assert SystemDetector.find_executable("gamescope") == True
+        assert SystemDetector.find_executable("gamescope")
 
         # Test executable not found scenario
         mock_system_detection_scenarios["executable_not_found"]()
-        assert SystemDetector.find_executable("nonexistent") == False
+        assert not SystemDetector.find_executable("nonexistent")
 
     def test_simple_gamescope_detection_with_mock_is_gamescope_active(
         self, mock_is_gamescope_active
@@ -295,11 +295,11 @@ class TestSystemDetectorFixtureUtilization:
 
         # Test mocking gamescope as active
         mock_is_gamescope_active.return_value = True
-        assert SystemDetector.is_gamescope_active() == True
+        assert SystemDetector.is_gamescope_active()
         mock_is_gamescope_active.assert_called_once()
 
         # Test mocking gamescope as inactive
         mock_is_gamescope_active.return_value = False
-        assert SystemDetector.is_gamescope_active() == False
+        assert not SystemDetector.is_gamescope_active()
         # Should be called twice total now
         assert mock_is_gamescope_active.call_count == 2

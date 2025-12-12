@@ -1,55 +1,35 @@
-# Neoscope Buddy (nscb) - Agentic Coding Guide
+# Neoscope Buddy (nscb) - Agentic Tool Guide
 
-## Project Overview
+## Development Environment Tools
 
-Neoscope Buddy (`nscb.pyz`) is a Python-based gamescope wrapper that provides a profile-based configuration system for managing gamescope settings. It allows users to define reusable gamescope configurations in a config file and apply them via command-line arguments with support for overrides.
+### Build System
 
-## Key Agentic Coding Information
+- **Build zipapp package**: `make clean build` - Creates `./dist/nscb.pyz` using Python's `zipapp` module
+- **Install locally**: `make all` - Cleans the dev environment, builds, and installs to `~/.local/bin` with `nscb` symlink
 
-### Configuration Format
+### Code Quality Tools
 
-- Config file uses `KEY=VALUE` format at `$XDG_CONFIG_HOME/nscb.conf` or `$HOME/.config/nscb.conf`
-- Keys represent profile names, values are space-separated gamescope arguments
-- Example: `gaming=-f -W 1920 -H 1080`
+- **Run tests**: `make test` - Executes test suite using uv and pytest
+- **Code quality checks**: `make quality` - Runs ruff and pyright for linting and type checking
+- **Complexity metrics**: `make radon` - Analyzes code complexity
 
-### Critical Functions to Understand
+## Test Environment Tools
 
-- `merge_arguments`: Implements sophisticated argument merging with conflict resolution
-- `find_config_file` / `load_config`: Configuration loading and parsing
-- `parse_profile_args`: Profile argument parsing
-- `execute_gamescope_command`: Command execution logic
+### Test Execution
 
-### Argument Merging Rules
+- **Run specific tests**: `uv run pytest -xvs tests/test_module.py` - Execute tests for a specific module
+- **Run with coverage**: `uv run pytest --cov=src --cov-report=term-missing --cov-branch` - Generate coverage report
+- **Debug tests**: `uv run pytest -xvs` - Verbose output with stdout capture disabled
 
-- Override arguments take precedence over profile arguments
-- Mutually exclusive flags like `-f` (fullscreen) vs `--borderless` are handled properly
-- Non-conflicting flags from profiles are preserved unless explicitly overridden
-- Order of arguments is maintained in the final command
+### Test Development
 
-### Project Tools
+- **Add new tests**: Follow existing patterns in `tests/test_*.py` files
+- **Use mocking**: Utilize `pytest-mock` fixture for dependency isolation
+- **Test categories**: Use appropriate decorators (`@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.e2e`)
 
-- Run our 'zipapp' bundler build: `make clean build`
-- Run tests and code coverage: `make test`
-- Run code complexity metrics `make radon`
-- Lint and format: `make quality`
+## Workflow Considerations
 
-## Development Guidelines
-
-### Adding New Features
-
-- Update `GAMESCOPE_ARGS_MAP` for new gamescope argument mappings
-- Add appropriate unit tests for new functionality
-- Test with profile system and override functionality
-
-### Security Considerations
-
-- Use `shlex.quote()` when building command strings to prevent injection
-- Sanitize user input from config files
-
-### Development Workflow Considerations
-
-- Ensure the 'code coverage' command above is used when adding/removing/refactoring tests
-- Ensure the 'lint and format' command above is used when refactoring any python code in this project
-- Ensure the 'format markdown' command above is used when refactoring any markdown file in this project
-- Before considering a task, action plan, or code change to be 'complete' or 'successful' ensure we run our tests using the 'run tests' command above
-- Try to fix a persistently failing test 3 times before prompting the user on what we should do next
+- **Test-driven development**: Write tests before implementing new features
+- **Quality gates**: Run `make quality` to ensure linting/formatting validates code before committing changes
+- **Test validation**: Ensure all tests pass before considering work complete
+- **Debugging**: Use `NSCB_DEBUG=1` environment variable for detailed logging

@@ -508,7 +508,9 @@ class TestProfileManagerFixtureUtilization:
         # merge_multiple_profiles only takes the profile args list, not overrides
         result = ProfileManager.merge_multiple_profiles(multiple_scenario["profiles"])
         # Check that all expected elements from profiles are present (without overrides)
-        expected_profiles_set = set([item for sublist in multiple_scenario["profiles"] for item in sublist])
+        expected_profiles_set = set(
+            [item for sublist in multiple_scenario["profiles"] for item in sublist]
+        )
         result_set = set(result)
         assert result_set == expected_profiles_set
         assert result.count("--framerate-limit") == 1
@@ -528,7 +530,9 @@ class TestProfileManagerFixtureUtilization:
         )
         assert result == empty_override_scenario["expected"]
 
-    def test_config_scenarios_with_fixtures(self, config_scenarios, temp_config_with_content):
+    def test_config_scenarios_with_fixtures(
+        self, config_scenarios, temp_config_with_content
+    ):
         """
         Test config parsing using config_scenarios fixture.
 

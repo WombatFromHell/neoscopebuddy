@@ -41,7 +41,7 @@ class PathHelper:
     @staticmethod
     def _is_valid_path_directory(path_dir: str) -> bool:
         """Check if path directory is valid."""
-        return path_dir and Path(path_dir).exists() and Path(path_dir).is_dir()
+        return bool(path_dir) and Path(path_dir).exists() and Path(path_dir).is_dir()
 
     @staticmethod
     def _is_executable_in_directory(name: str, path_dir: str) -> bool:

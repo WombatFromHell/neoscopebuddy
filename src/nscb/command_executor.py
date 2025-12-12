@@ -298,11 +298,9 @@ class CommandExecutor:
     ) -> str:
         """Build command with exports when no app args are present."""
         # Create env command for exports
-        env_cmd_parts = ["env"] + [
-            f"{k}={shlex.quote(v)}" for k, v in exports.items()
-        ]
+        env_cmd_parts = ["env"] + [f"{k}={shlex.quote(v)}" for k, v in exports.items()]
         export_cmd = CommandExecutor._build_app_command(env_cmd_parts)
-        
+
         if not pre_cmd and not post_cmd:
             # If no pre/post commands, just run exports and exit
             return export_cmd
@@ -311,9 +309,7 @@ class CommandExecutor:
             return CommandExecutor.build_command([pre_cmd, export_cmd, post_cmd])
 
     @staticmethod
-    def _build_active_no_separator_no_exports(
-        pre_cmd: str, post_cmd: str
-    ) -> str:
+    def _build_active_no_separator_no_exports(pre_cmd: str, post_cmd: str) -> str:
         """Build command without exports when no app args are present."""
         if not pre_cmd and not post_cmd:
             return ""

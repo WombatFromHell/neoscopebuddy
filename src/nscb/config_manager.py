@@ -2,7 +2,6 @@
 
 import re
 from pathlib import Path
-from typing import Dict
 
 from .config_result import ConfigResult
 from .exceptions import InvalidConfigError
@@ -67,7 +66,11 @@ class ConfigManager:
 
     @staticmethod
     def _process_config_line(
-        line: str, line_num: int, config_file: str, profiles: ConfigData, exports: EnvExports
+        line: str,
+        line_num: int,
+        config_file: str,
+        profiles: ConfigData,
+        exports: EnvExports,
     ) -> None:
         """
         Process a single configuration line.
@@ -155,7 +158,7 @@ class ConfigManager:
         """
         key, value = line.split("=", 1)
         key = ConfigManager._strip_quotes_from_key(key.strip())
-        
+
         ConfigManager._validate_and_store_profile(
             key, value.strip(), line_num, config_file, profiles
         )
@@ -165,7 +168,7 @@ class ConfigManager:
         """Strip quotes from key if present for backward compatibility."""
         if not key:
             return key
-        
+
         return ConfigManager._strip_quotes_from_key_if_quoted(key)
 
     @staticmethod
@@ -178,9 +181,8 @@ class ConfigManager:
     @staticmethod
     def _is_key_quoted(key: str) -> bool:
         """Check if key is quoted with matching quotes."""
-        return (
-            (key.startswith('"') and key.endswith('"'))
-            or (key.startswith("'") and key.endswith("'"))
+        return (key.startswith('"') and key.endswith('"')) or (
+            key.startswith("'") and key.endswith("'")
         )
 
     @staticmethod
@@ -195,10 +197,8 @@ class ConfigManager:
                 line_num,
                 f"Invalid profile name: '{key}'",
             )
-        
-        ConfigManager._sanitize_and_store_profile_value(
-            key, value, profiles
-        )
+
+        ConfigManager._sanitize_and_store_profile_value(key, value, profiles)
 
     @staticmethod
     def _sanitize_and_store_profile_value(
@@ -310,9 +310,8 @@ class ConfigManager:
     @staticmethod
     def _is_value_quoted(value: str) -> bool:
         """Check if value is quoted with matching quotes."""
-        return (
-            (value.startswith('"') and value.endswith('"'))
-            or (value.startswith("'") and value.endswith("'"))
+        return (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
         )
 
     @staticmethod

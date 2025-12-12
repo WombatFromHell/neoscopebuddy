@@ -452,7 +452,7 @@ class TestEnvironmentHelperFixtureUtilization:
         basic_vars = mock_environment_variables["basic"]
         for var, value in basic_vars.items():
             monkeypatch.setenv(var, value)
-        
+
         # Verify environment variables are set correctly
         assert EnvironmentHelper.get_pre_post_commands()[0] == ""
         assert EnvironmentHelper.get_pre_post_commands()[1] == ""
@@ -462,33 +462,31 @@ class TestEnvironmentHelperFixtureUtilization:
         ld_preload_vars = mock_environment_variables["ld_preload"]
         for var, value in ld_preload_vars.items():
             monkeypatch.setenv(var, value)
-        
+
         # Verify LD_PRELOAD handling
-        assert EnvironmentHelper.should_disable_ld_preload_wrap() == False
+        assert not EnvironmentHelper.should_disable_ld_preload_wrap()
 
         # Test gamescope active scenario
         monkeypatch.undo()  # Clear previous environment
         gamescope_vars = mock_environment_variables["gamescope_active"]
         for var, value in gamescope_vars.items():
             monkeypatch.setenv(var, value)
-        
+
         # Verify gamescope detection
-        assert EnvironmentHelper.is_gamescope_active() == True
+        assert EnvironmentHelper.is_gamescope_active()
 
         # Test pre/post commands scenario
         monkeypatch.undo()  # Clear previous environment
         pre_post_vars = mock_environment_variables["pre_post_commands"]
         for var, value in pre_post_vars.items():
             monkeypatch.setenv(var, value)
-        
+
         # Verify pre/post command handling
         pre_cmd, post_cmd = EnvironmentHelper.get_pre_post_commands()
         assert "echo 'pre command'" in pre_cmd
         assert "echo 'post command'" in post_cmd
 
-    def test_ld_preload_scenarios_with_fixtures(
-        self, mock_ld_preload_scenarios
-    ):
+    def test_ld_preload_scenarios_with_fixtures(self, mock_ld_preload_scenarios):
         """
         Test LD_PRELOAD handling using mock_ld_preload_scenarios fixture.
 
@@ -499,16 +497,16 @@ class TestEnvironmentHelperFixtureUtilization:
 
         # Test with LD_PRELOAD enabled
         mock_ld_preload_scenarios["with_ld_preload"]()
-        assert EnvironmentHelper.should_disable_ld_preload_wrap() == False
+        assert not EnvironmentHelper.should_disable_ld_preload_wrap()
 
         # Test with LD_PRELOAD disabled by environment variable
         mock_ld_preload_scenarios["disabled_by_env"]()
-        assert EnvironmentHelper.should_disable_ld_preload_wrap() == True
+        assert EnvironmentHelper.should_disable_ld_preload_wrap()
 
         # Test with LD_PRELOAD disabled by Faugus launcher
         mock_ld_preload_scenarios["disabled_by_faugus"]()
-        assert EnvironmentHelper.should_disable_ld_preload_wrap() == True
+        assert EnvironmentHelper.should_disable_ld_preload_wrap()
 
         # Test with no LD_PRELOAD set
         mock_ld_preload_scenarios["no_ld_preload"]()
-        assert EnvironmentHelper.should_disable_ld_preload_wrap() == False
+        assert not EnvironmentHelper.should_disable_ld_preload_wrap()

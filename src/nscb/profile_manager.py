@@ -1,11 +1,10 @@
 """Profile management functionality for NeoscopeBuddy."""
 
-import shlex
 from functools import reduce
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .argument_processor import ArgumentProcessor
+    from .argument_processor import ArgumentProcessor  # noqa: F401
 
 from .gamescope_args import GAMESCOPE_ARGS_MAP
 from .types import ArgsList, FlagTuple, ProfileArgsList

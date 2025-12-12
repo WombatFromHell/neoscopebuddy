@@ -54,6 +54,121 @@ class TestCommandExecutorUnit:
         assert result == 0
 
 
+class TestCommandExecutorErrorHandling:
+    """Test error handling in command executor using error simulation fixtures."""
+
+    def test_command_execution_error_handling(
+        self, error_simulation_comprehensive, mocker
+    ):
+        """
+        Test command execution error handling using error_simulation_comprehensive fixture.
+
+        This demonstrates how to use the error_simulation_comprehensive fixture to test
+        various error scenarios in command execution.
+        """
+        from nscb.command_executor import CommandExecutor
+
+        # Test subprocess execution failure
+        mock_process = mocker.MagicMock()
+        mock_process.wait.return_value = 1
+        mock_process.stdout.readline.return_value = ""
+        mock_process.stderr.readline.return_value = "Command failed\n"
+
+        mock_selector = mocker.MagicMock()
+        mock_selector.get_map.return_value = []
+        mock_selector.select.return_value = []
+
+        mocker.patch("subprocess.Popen", return_value=mock_process)
+        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+
+        # Test that subprocess errors are handled properly
+        result = CommandExecutor.run_nonblocking("nonexistent_command")
+        assert result == 1
+
+        # Test IOError handling during subprocess operations
+        # Reset the process to success mode first
+        mock_process.wait.return_value = 0
+        mock_process.stdout.readline.side_effect = error_simulation_comprehensive[
+            "file_system"
+        ]["permission_denied"]
+        mock_process.stderr.readline.side_effect = error_simulation_comprehensive[
+            "file_system"
+        ]["permission_denied"]
+
+        # This should handle the IOError gracefully
+        result = CommandExecutor.run_nonblocking("test_command")
+        # Should still return the process exit code even with IO errors
+        assert result == 0
+
+    def test_environment_command_error_handling(self, mock_env_commands, mocker):
+        """
+        Test environment command handling using mock_env_commands fixture.
+
+        This demonstrates how to use the mock_env_commands fixture to test
+        pre/post command execution scenarios.
+        """
+        from nscb.command_executor import CommandExecutor
+
+        # Setup environment commands
+        mock_env_commands("echo 'pre-command'", "echo 'post-command'")
+
+        # Mock the actual command execution
+        mock_process = mocker.MagicMock()
+        mock_process.wait.return_value = 0
+        mock_process.stdout.readline.return_value = ""
+        mock_process.stderr.readline.return_value = ""
+
+        mock_selector = mocker.MagicMock()
+        mock_selector.get_map.return_value = []
+        mock_selector.select.return_value = []
+
+        mocker.patch("subprocess.Popen", return_value=mock_process)
+        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+
+        # Test that environment commands are handled properly
+        result = CommandExecutor.run_nonblocking("test_command")
+        assert result == 0
+
+        # Verify that the environment commands were set up correctly
+        from nscb.command_executor import CommandExecutor
+
+        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
+        assert pre_cmd == "echo 'pre-command'"
+        assert post_cmd == "echo 'post-command'"
+
+
+class TestCommandExecutorIntegration:
+    """Integration tests for command executor using integration fixtures."""
+
+    def test_integration_with_mock_integration_setup(
+        self, mock_integration_setup, mocker
+    ):
+        """
+        Test command executor integration using mock_integration_setup fixture.
+
+        This demonstrates how to use the mock_integration_setup fixture to test
+        complex workflows involving command execution.
+        """
+        from nscb.command_executor import CommandExecutor
+
+        # Access the mocked components from the integration setup
+        mock_run = mock_integration_setup["run_nonblocking"]
+        mock_build = mock_integration_setup["build_command"]
+
+        # Test command building
+        test_args = ["gamescope", "-f", "-W", "1920", "--", "/bin/game"]
+        result = CommandExecutor.build_command(test_args)
+
+        # Verify the mock was called
+        mock_build.assert_called_once()
+
+        # Test command execution
+        result = CommandExecutor.run_nonblocking("test_command")
+        mock_run.assert_called_once()
+
+        assert result == 0
+
+
 class TestCommandExecutorFixtureUtilization:
     """Test class demonstrating utilization of command executor fixtures."""
 
@@ -96,28 +211,32 @@ class TestCommandExecutorFixtureUtilization:
         expected_with_semicolons = "; ".join(complex_scenario["args"])
         assert result == expected_with_semicolons
 
-    def test_subprocess_scenarios_with_fixtures(
-        self, mock_subprocess_success, mock_subprocess_failure
-    ):
+    def test_subprocess_scenarios_with_fixtures(self, mock_subprocess, mocker):
         """
-        Test subprocess handling using subprocess fixtures.
+        Test subprocess handling using the consolidated subprocess fixture.
 
-        This demonstrates how to use the subprocess success and failure fixtures
+        This demonstrates how to use the consolidated mock_subprocess fixture
         to test various subprocess execution scenarios in a standardized way.
         """
-        from nscb.command_executor import CommandExecutor
-
-        # Test that the fixtures are working by verifying they mock subprocess correctly
-        # The fixtures set up the mocking, so we can just verify the mocks are in place
+        # Test that the consolidated fixture is working by verifying it mocks subprocess correctly
         import subprocess
-        assert hasattr(subprocess, 'Popen')
+
+        assert hasattr(subprocess, "Popen")
         assert callable(subprocess.Popen)
 
-        # Test that the success fixture returns a mock process with exit code 0
-        assert mock_subprocess_success.wait.return_value == 0
+        # Test the default success behavior (exit code 0)
+        assert mock_subprocess.wait.return_value == 0
 
-        # Test that the failure fixture returns a mock process with exit code 1
-        assert mock_subprocess_failure.wait.return_value == 1
+        # Test that we can configure the fixture for failure scenarios
+        mock_subprocess.wait.return_value = 1
+        mocker.patch.object(
+            mock_subprocess.stderr, "readline", side_effect=["error output\n", ""]
+        )
+        assert mock_subprocess.wait.return_value == 1
+
+        # Reset to success for other tests
+        mock_subprocess.wait.return_value = 0
+        mocker.patch.object(mock_subprocess.stderr, "readline", side_effect=["", ""])
 
     def test_run_nonblocking_with_empty_output(self, mocker):
         """Test run_nonblocking with command that produces no output."""
@@ -318,7 +437,7 @@ class TestCommandExecutorFixtureUtilization:
         assert result == expected
 
 
-class TestCommandExecutorIntegration:
+class TestCommandExecutorModuleIntegration:
     """Integration tests for the CommandExecutor with other modules."""
 
     def test_command_executor_environment_helper_integration(self, mocker):

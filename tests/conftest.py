@@ -77,9 +77,7 @@ def mock_integration_setup(mocker):
     mock_profile_merge = mocker.patch(
         "nscb.profile_manager.ProfileManager.merge_arguments"
     )
-    mock_config_load = mocker.patch(
-        "nscb.config_manager.ConfigManager.load_config"
-    )
+    mock_config_load = mocker.patch("nscb.config_manager.ConfigManager.load_config")
 
     return {
         "run_nonblocking": mock_run_nonblocking,
@@ -149,45 +147,42 @@ def mock_system_detection_scenarios(mocker):
     Usage:
         def test_system_detection(mock_system_detection_scenarios):
             scenarios = mock_system_detection_scenarios
-            
+
             # Test gamescope active detection
             scenarios["gamescope_active"]()
             assert is_gamescope_active() == True
-            
+
             # Test gamescope inactive detection
             scenarios["gamescope_inactive"]()
             assert is_gamescope_active() == False
     """
-    
+
     def _gamescope_active():
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
-            return_value=True
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
         )
-    
+
     def _gamescope_inactive():
         mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
-            return_value=False
+            return_value=False,
         )
-    
+
     def _executable_found():
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
-            return_value=True
+            "nscb.system_detector.SystemDetector.find_executable", return_value=True
         )
-    
+
     def _executable_not_found():
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
-            return_value=False
+            "nscb.system_detector.SystemDetector.find_executable", return_value=False
         )
-    
+
     return {
         "gamescope_active": _gamescope_active,
         "gamescope_inactive": _gamescope_inactive,
         "executable_found": _executable_found,
-        "executable_not_found": _executable_not_found
+        "executable_not_found": _executable_not_found,
     }
 
 
@@ -201,39 +196,59 @@ def mock_execution_scenarios(mocker):
     Usage:
         def test_execution_scenarios(mock_execution_scenarios):
             scenarios = mock_execution_scenarios
-            
+
             # Test basic execution
             args = scenarios["basic"]["args"]
             expected_cmd = scenarios["basic"]["expected_command"]
-            
+
             result = build_command(args)
             assert result == expected_cmd
     """
     return {
         "basic": {
             "args": ["gamescope", "-f", "-W", "1920", "--", "/bin/game"],
-            "expected_command": "gamescope -f -W 1920 -- /bin/game"
+            "expected_command": "gamescope -f -W 1920 -- /bin/game",
         },
         "with_ld_preload": {
-            "args": ["env", "-u", "LD_PRELOAD", "gamescope", "-f", "--", "env", "LD_PRELOAD=/path/to/lib.so", "/bin/game"],
-            "expected_command": "env -u LD_PRELOAD gamescope -f -- env LD_PRELOAD=/path/to/lib.so /bin/game"
+            "args": [
+                "env",
+                "-u",
+                "LD_PRELOAD",
+                "gamescope",
+                "-f",
+                "--",
+                "env",
+                "LD_PRELOAD=/path/to/lib.so",
+                "/bin/game",
+            ],
+            "expected_command": "env -u LD_PRELOAD gamescope -f -- env LD_PRELOAD=/path/to/lib.so /bin/game",
         },
         "with_pre_post": {
             "args": ["echo 'pre'", "gamescope", "-f", "--", "/bin/game", "echo 'post'"],
-            "expected_command": "echo 'pre'; gamescope -f -- /bin/game; echo 'post'"
+            "expected_command": "echo 'pre'; gamescope -f -- /bin/game; echo 'post'",
         },
         "complex": {
             "args": [
                 "echo 'pre'",
-                "env", "-u", "LD_PRELOAD", "gamescope", "-f", "-W", "1920",
-                "--", "env", "DISPLAY=:0", "LD_PRELOAD=/path/to/lib.so", "/bin/game",
-                "echo 'post'"
+                "env",
+                "-u",
+                "LD_PRELOAD",
+                "gamescope",
+                "-f",
+                "-W",
+                "1920",
+                "--",
+                "env",
+                "DISPLAY=:0",
+                "LD_PRELOAD=/path/to/lib.so",
+                "/bin/game",
+                "echo 'post'",
             ],
             "expected_command": (
                 "echo 'pre'; env -u LD_PRELOAD gamescope -f -W 1920 -- "
                 "env DISPLAY=:0 LD_PRELOAD=/path/to/lib.so /bin/game; echo 'post'"
-            )
-        }
+            ),
+        },
     }
 
 
@@ -267,7 +282,7 @@ def mock_environment_variables(monkeypatch):
         def test_env_scenarios(mock_environment_variables):
             # Get predefined scenarios
             scenarios = mock_environment_variables
-            
+
             # Use in tests
             for scenario_name, env_vars in scenarios.items():
                 for var, value in env_vars.items():
@@ -280,15 +295,15 @@ def mock_environment_variables(monkeypatch):
         "faugus_launcher": {"FAUGUS_LOG": "1"},
         "pre_post_commands": {
             "NSCB_PRE_CMD": "echo 'pre command'",
-            "NSCB_POST_CMD": "echo 'post command'"
+            "NSCB_POST_CMD": "echo 'post command'",
         },
         "complex": {
             "NSCB_DEBUG": "1",
             "LD_PRELOAD": "/path/to/lib.so",
             "XDG_CURRENT_DESKTOP": "gamescope",
             "NSCB_PRE_CMD": "echo 'pre'",
-            "NSCB_POST_CMD": "echo 'post'"
-        }
+            "NSCB_POST_CMD": "echo 'post'",
+        },
     }
 
 
@@ -303,36 +318,36 @@ def mock_ld_preload_scenarios(monkeypatch):
         def test_ld_preload_handling(mock_ld_preload_scenarios):
             # Test with LD_PRELOAD set
             mock_ld_preload_scenarios["with_ld_preload"]()
-            
+
             # Test with LD_PRELOAD disabled
             mock_ld_preload_scenarios["disabled"]()
     """
-    
+
     def _with_ld_preload():
         monkeypatch.setenv("LD_PRELOAD", "/usr/lib/libtest.so")
         monkeypatch.delenv("NSCB_DISABLE_LD_PRELOAD_WRAP", raising=False)
         monkeypatch.delenv("FAUGUS_LOG", raising=False)
-    
+
     def _disabled_by_env():
         monkeypatch.setenv("LD_PRELOAD", "/usr/lib/libtest.so")
         monkeypatch.setenv("NSCB_DISABLE_LD_PRELOAD_WRAP", "1")
         monkeypatch.delenv("FAUGUS_LOG", raising=False)
-    
+
     def _disabled_by_faugus():
         monkeypatch.setenv("LD_PRELOAD", "/usr/lib/libtest.so")
         monkeypatch.delenv("NSCB_DISABLE_LD_PRELOAD_WRAP", raising=False)
         monkeypatch.setenv("FAUGUS_LOG", "1")
-    
+
     def _no_ld_preload():
         monkeypatch.delenv("LD_PRELOAD", raising=False)
         monkeypatch.delenv("NSCB_DISABLE_LD_PRELOAD_WRAP", raising=False)
         monkeypatch.delenv("FAUGUS_LOG", raising=False)
-    
+
     return {
         "with_ld_preload": _with_ld_preload,
         "disabled_by_env": _disabled_by_env,
         "disabled_by_faugus": _disabled_by_faugus,
-        "no_ld_preload": _no_ld_preload
+        "no_ld_preload": _no_ld_preload,
     }
 
 
@@ -389,12 +404,12 @@ def profile_scenarios():
     Usage:
         def test_profile_merging(profile_scenarios):
             scenarios = profile_scenarios
-            
+
             # Test basic profile merge
             profile_args = scenarios["basic"]["profiles"]
             override_args = scenarios["basic"]["overrides"]
             expected = scenarios["basic"]["expected"]
-            
+
             result = merge_arguments(profile_args, override_args)
             assert result == expected
     """
@@ -402,31 +417,31 @@ def profile_scenarios():
         "basic": {
             "profiles": ["-f", "-W", "1920", "-H", "1080"],
             "overrides": ["-W", "3840"],
-            "expected": ["-f", "-W", "3840", "-H", "1080"]
+            "expected": ["-f", "-W", "3840", "-H", "1080"],
         },
         "conflict_resolution": {
             "profiles": ["-f", "-W", "1920"],
             "overrides": ["--borderless", "-W", "2560"],
-            "expected": ["--borderless", "-W", "2560"]
+            "expected": ["--borderless", "-W", "2560"],
         },
         "multiple_profiles": {
             "profiles": [
                 ["-f", "-W", "1920"],
-                ["-H", "1080", "--framerate-limit", "60"]
+                ["-H", "1080", "--framerate-limit", "60"],
             ],
             "overrides": ["--framerate-limit", "120"],
-            "expected": ["-f", "-W", "1920", "-H", "1080", "--framerate-limit", "120"]
+            "expected": ["-f", "-W", "1920", "-H", "1080", "--framerate-limit", "120"],
         },
         "empty_profile": {
             "profiles": [],
             "overrides": ["-f", "-W", "1920"],
-            "expected": ["-f", "-W", "1920"]
+            "expected": ["-f", "-W", "1920"],
         },
         "empty_override": {
             "profiles": ["-f", "-W", "1920"],
             "overrides": [],
-            "expected": ["-f", "-W", "1920"]
-        }
+            "expected": ["-f", "-W", "1920"],
+        },
     }
 
 
@@ -440,12 +455,12 @@ def config_scenarios():
     Usage:
         def test_config_parsing(config_scenarios):
             scenarios = config_scenarios
-            
+
             # Test basic config parsing
             config_content = scenarios["basic"]["content"]
             expected_profiles = scenarios["basic"]["expected_profiles"]
             expected_exports = scenarios["basic"]["expected_exports"]
-            
+
             result = load_config(config_content)
             assert result.profiles == expected_profiles
             assert result.exports == expected_exports
@@ -455,33 +470,28 @@ def config_scenarios():
             "content": "gaming=-f -W 1920 -H 1080\nstreaming=--borderless -W 1280 -H 720\n",
             "expected_profiles": {
                 "gaming": "-f -W 1920 -H 1080",
-                "streaming": "--borderless -W 1280 -H 720"
+                "streaming": "--borderless -W 1280 -H 720",
             },
-            "expected_exports": {}
+            "expected_exports": {},
         },
         "with_exports": {
             "content": "gaming=-f -W 1920 -H 1080\nexport DISPLAY=:0\nexport MANGOHUD=1\n",
-            "expected_profiles": {
-                "gaming": "-f -W 1920 -H 1080"
-            },
-            "expected_exports": {
-                "DISPLAY": ":0",
-                "MANGOHUD": "1"
-            }
+            "expected_profiles": {"gaming": "-f -W 1920 -H 1080"},
+            "expected_exports": {"DISPLAY": ":0", "MANGOHUD": "1"},
         },
         "complex": {
-            "content": "# This is a comment\ngaming=-f -W 1920 -H 1080\nstreaming=--borderless -W 1280 -H 720\nportable=\"--fsr-sharpness 5 --framerate-limit 60\"\nexport DISPLAY=:0\nexport MANGOHUD=1\nexport CUSTOM_VAR=\"value with spaces\"\n",
+            "content": '# This is a comment\ngaming=-f -W 1920 -H 1080\nstreaming=--borderless -W 1280 -H 720\nportable="--fsr-sharpness 5 --framerate-limit 60"\nexport DISPLAY=:0\nexport MANGOHUD=1\nexport CUSTOM_VAR="value with spaces"\n',
             "expected_profiles": {
                 "gaming": "-f -W 1920 -H 1080",
                 "streaming": "--borderless -W 1280 -H 720",
-                "portable": "--fsr-sharpness 5 --framerate-limit 60"
+                "portable": "--fsr-sharpness 5 --framerate-limit 60",
             },
             "expected_exports": {
                 "DISPLAY": ":0",
                 "MANGOHUD": "1",
-                "CUSTOM_VAR": "value with spaces"
-            }
-        }
+                "CUSTOM_VAR": "value with spaces",
+            },
+        },
     }
 
 
@@ -654,19 +664,19 @@ def mock_application_workflow(mocker, temp_config_file):
             # Setup test configuration
             config_content = "gaming=-f -W 1920 -H 1080\n"
             config_path = mock_application_workflow.setup_config(config_content)
-            
+
             # Mock system detection
             mock_application_workflow.mock_gamescope_inactive()
-            
+
             # Test application execution
             app = Application()
             result = app.run(["-p", "gaming", "--", "/bin/test_game"])
-            
+
             # Verify execution
             assert result == 0
             mock_application_workflow.verify_execution()
     """
-    
+
     class ApplicationWorkflowMock:
         def __init__(self):
             self.config_path = temp_config_file
@@ -674,51 +684,52 @@ def mock_application_workflow(mocker, temp_config_file):
                 "nscb.system_detector.SystemDetector.find_executable", return_value=True
             )
             self.mock_is_active = mocker.patch(
-                "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+                "nscb.system_detector.SystemDetector.is_gamescope_active",
+                return_value=False,
             )
             self.mock_run = mocker.patch(
                 "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
             )
             self.mock_build = mocker.patch(
                 "nscb.command_executor.CommandExecutor.build_command",
-                side_effect=lambda x: "; ".join(x)
+                side_effect=lambda x: "; ".join(x),
             )
             self.mock_find_config = mocker.patch(
                 "nscb.config_manager.ConfigManager.find_config_file",
-                return_value=self.config_path
+                return_value=self.config_path,
             )
-        
+
         def setup_config(self, content):
             """Setup test configuration file."""
             with open(self.config_path, "w") as f:
                 f.write(content)
             return self.config_path
-        
+
         def mock_gamescope_active(self):
             """Mock gamescope as active."""
             self.mock_is_active.return_value = True
-        
+
         def mock_gamescope_inactive(self):
             """Mock gamescope as inactive."""
             self.mock_is_active.return_value = False
-        
+
         def mock_execution_success(self):
             """Mock successful execution."""
             self.mock_run.return_value = 0
-        
+
         def mock_execution_failure(self):
             """Mock failed execution."""
             self.mock_run.return_value = 1
-        
+
         def verify_execution(self):
             """Verify that execution was attempted."""
             self.mock_run.assert_called_once()
             self.mock_build.assert_called()
-        
+
         def verify_config_loading(self):
             """Verify that config loading was attempted."""
             self.mock_find_config.assert_called_once()
-    
+
     return ApplicationWorkflowMock()
 
 
@@ -733,27 +744,27 @@ def xdg_config_scenarios(monkeypatch, temp_config_file):
     Usage:
         def test_xdg_config_scenarios(xdg_config_scenarios):
             scenarios = xdg_config_scenarios
-            
+
             # Test XDG config exists scenario
             config_path = scenarios["xdg_exists"]()
             result = ConfigManager.find_config_file()
             assert result == config_path
-            
+
             # Test fallback to HOME scenario
             config_path = scenarios["home_fallback"]()
             result = ConfigManager.find_config_file()
             assert result == config_path
     """
-    
+
     def _xdg_exists():
         """Scenario: XDG_CONFIG_HOME exists with config file."""
         with open(temp_config_file, "w") as f:
             f.write("gaming=-f -W 1920 -H 1080\n")
-        
+
         monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_config_file.parent))
         monkeypatch.delenv("HOME", raising=False)
         return temp_config_file
-    
+
     def _home_fallback():
         """Scenario: XDG_CONFIG_HOME missing, fallback to HOME/.config."""
         home_config_dir = temp_config_file.parent
@@ -761,11 +772,11 @@ def xdg_config_scenarios(monkeypatch, temp_config_file):
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w") as f:
             f.write("gaming=-f -W 1920 -H 1080\n")
-        
+
         monkeypatch.setenv("XDG_CONFIG_HOME", "/nonexistent")
         monkeypatch.setenv("HOME", str(home_config_dir))
         return config_path
-    
+
     def _home_only():
         """Scenario: Only HOME/.config exists."""
         home_config_dir = temp_config_file.parent
@@ -773,22 +784,22 @@ def xdg_config_scenarios(monkeypatch, temp_config_file):
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w") as f:
             f.write("gaming=-f -W 1920 -H 1080\n")
-        
+
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.setenv("HOME", str(home_config_dir))
         return config_path
-    
+
     def _no_config():
         """Scenario: No config file exists."""
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.delenv("HOME", raising=False)
         return None
-    
+
     return {
         "xdg_exists": _xdg_exists,
         "home_fallback": _home_fallback,
         "home_only": _home_only,
-        "no_config": _no_config
+        "no_config": _no_config,
     }
 
 
@@ -804,40 +815,41 @@ def system_detection_comprehensive(mocker):
     Usage:
         def test_system_detection_comprehensive(system_detection_comprehensive):
             detection = system_detection_comprehensive
-            
+
             # Setup gamescope as active with executable found
             detection.gamescope_active(True).executable_found(True)
-            
+
             # Test detection
             assert SystemDetector.is_gamescope_active() == True
             assert SystemDetector.find_executable("gamescope") == True
     """
-    
+
     class SystemDetectionMock:
         def __init__(self):
             self.mock_is_active = mocker.patch(
-                "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+                "nscb.system_detector.SystemDetector.is_gamescope_active",
+                return_value=False,
             )
             self.mock_find_exec = mocker.patch(
                 "nscb.system_detector.SystemDetector.find_executable", return_value=True
             )
-        
+
         def gamescope_active(self, active=True):
             """Set gamescope active state."""
             self.mock_is_active.return_value = active
             return self
-        
+
         def executable_found(self, found=True):
             """Set executable found state."""
             self.mock_find_exec.return_value = found
             return self
-        
+
         def reset(self):
             """Reset all mocks to default values."""
             self.mock_is_active.return_value = False
             self.mock_find_exec.return_value = True
             return self
-    
+
     return SystemDetectionMock()
 
 
@@ -852,7 +864,7 @@ def argument_processing_patterns():
     Usage:
         def test_argument_processing(argument_processing_patterns):
             patterns = argument_processing_patterns
-            
+
             # Test simple profile arguments
             result = process_args(patterns["simple_profile"])
             assert result == expected_simple_result
@@ -864,8 +876,25 @@ def argument_processing_patterns():
         "mixed_args": ["-p", "profile1", "-W", "3840", "--", "game.exe"],
         "empty_args": [],
         "only_positionals": ["app.exe", "arg1", "arg2"],
-        "complex_profile": ["-f", "-W", "1920", "-H", "1080", "--framerate-limit", "60"],
-        "override_scenario": ["-p", "base", "-W", "3840", "-H", "2160", "--", "game.exe"]
+        "complex_profile": [
+            "-f",
+            "-W",
+            "1920",
+            "-H",
+            "1080",
+            "--framerate-limit",
+            "60",
+        ],
+        "override_scenario": [
+            "-p",
+            "base",
+            "-W",
+            "3840",
+            "-H",
+            "2160",
+            "--",
+            "game.exe",
+        ],
     }
 
 
@@ -880,11 +909,11 @@ def error_simulation_comprehensive():
     Usage:
         def test_error_handling(error_simulation_comprehensive):
             errors = error_simulation_comprehensive
-            
+
             # Test file system errors
             with pytest.raises(PermissionError):
                 raise errors["file_system"]["permission_denied"]
-            
+
             # Test configuration errors
             with pytest.raises(ValueError):
                 raise errors["configuration"]["invalid_format"]
@@ -894,31 +923,31 @@ def error_simulation_comprehensive():
             "permission_denied": PermissionError("Permission denied"),
             "file_not_found": FileNotFoundError("File not found"),
             "directory_not_found": NotADirectoryError("Not a directory"),
-            "file_exists": FileExistsError("File already exists")
+            "file_exists": FileExistsError("File already exists"),
         },
         "configuration": {
             "invalid_format": ValueError("Invalid configuration format"),
             "missing_key": KeyError("Missing required key"),
             "invalid_value": ValueError("Invalid value in configuration"),
-            "parse_error": ValueError("Failed to parse configuration")
+            "parse_error": ValueError("Failed to parse configuration"),
         },
         "execution": {
             "command_failed": RuntimeError("Command execution failed"),
             "timeout": TimeoutError("Command timed out"),
             "subprocess_error": RuntimeError("Subprocess error occurred"),
-            "exit_code_error": RuntimeError("Unexpected exit code")
+            "exit_code_error": RuntimeError("Unexpected exit code"),
         },
         "system": {
             "executable_not_found": RuntimeError("Executable not found"),
             "gamescope_active": RuntimeError("Gamescope already active"),
             "environment_error": RuntimeError("Environment variable error"),
-            "platform_error": RuntimeError("Unsupported platform")
+            "platform_error": RuntimeError("Unsupported platform"),
         },
         "network": {
             "connection_error": ConnectionError("Connection failed"),
             "timeout": TimeoutError("Network timeout"),
-            "ssl_error": RuntimeError("SSL certificate error")
-        }
+            "ssl_error": RuntimeError("SSL certificate error"),
+        },
     }
 
 
@@ -933,22 +962,22 @@ def integration_test_setup(mocker):
     Usage:
         def test_integration_workflow(integration_test_setup):
             setup = integration_test_setup
-            
+
             # Setup mocks
             setup.mock_config_loading({"gaming": "-f -W 1920"})
             setup.mock_system_detection(gamescope_active=False)
             setup.mock_execution_success()
-            
+
             # Test application workflow
             app = Application()
             result = app.run(["-p", "gaming", "--", "/bin/game"])
-            
+
             # Verify results
             assert result == 0
             setup.verify_config_loaded()
             setup.verify_execution_attempted()
     """
-    
+
     class IntegrationTestSetup:
         def __init__(self):
             # Mock core components
@@ -959,7 +988,8 @@ def integration_test_setup(mocker):
                 "nscb.config_manager.ConfigManager.load_config", return_value=None
             )
             self.mock_is_active = mocker.patch(
-                "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=False
+                "nscb.system_detector.SystemDetector.is_gamescope_active",
+                return_value=False,
             )
             self.mock_find_exec = mocker.patch(
                 "nscb.system_detector.SystemDetector.find_executable", return_value=True
@@ -969,61 +999,61 @@ def integration_test_setup(mocker):
             )
             self.mock_build = mocker.patch(
                 "nscb.command_executor.CommandExecutor.build_command",
-                side_effect=lambda x: "; ".join(x)
+                side_effect=lambda x: "; ".join(x),
             )
             self.mock_merge = mocker.patch(
                 "nscb.profile_manager.ProfileManager.merge_arguments"
             )
-        
+
         def mock_config_loading(self, profiles=None, exports=None):
             """Mock configuration loading with specified profiles and exports."""
             from nscb.config_result import ConfigResult
-            
+
             config_result = ConfigResult(profiles or {}, exports or {})
             self.mock_load_config.return_value = config_result
             return self
-        
+
         def mock_system_detection(self, gamescope_active=False, executable_found=True):
             """Mock system detection with specified states."""
             self.mock_is_active.return_value = gamescope_active
             self.mock_find_exec.return_value = executable_found
             return self
-        
+
         def mock_execution_success(self):
             """Mock successful execution."""
             self.mock_run.return_value = 0
             return self
-        
+
         def mock_execution_failure(self, exit_code=1):
             """Mock failed execution with specified exit code."""
             self.mock_run.return_value = exit_code
             return self
-        
+
         def mock_argument_merging(self, return_value):
             """Mock argument merging with specified return value."""
             self.mock_merge.return_value = return_value
             return self
-        
+
         def verify_config_loaded(self):
             """Verify that config loading was attempted."""
             self.mock_load_config.assert_called()
             return self
-        
+
         def verify_execution_attempted(self):
             """Verify that execution was attempted."""
             self.mock_run.assert_called()
             return self
-        
+
         def verify_command_built(self):
             """Verify that command building was attempted."""
             self.mock_build.assert_called()
             return self
-        
+
         def verify_argument_merging(self):
             """Verify that argument merging was attempted."""
             self.mock_merge.assert_called()
             return self
-    
+
     return IntegrationTestSetup()
 
 
@@ -1038,12 +1068,12 @@ def profile_test_scenarios():
     Usage:
         def test_profile_management(profile_test_scenarios):
             scenarios = profile_test_scenarios
-            
+
             # Test basic profile merge
             profile_args = scenarios["basic"]["profiles"]
             override_args = scenarios["basic"]["overrides"]
             expected = scenarios["basic"]["expected"]
-            
+
             result = merge_arguments(profile_args, override_args)
             assert result == expected
     """
@@ -1051,34 +1081,44 @@ def profile_test_scenarios():
         "basic": {
             "profiles": ["-f", "-W", "1920", "-H", "1080"],
             "overrides": ["-W", "3840"],
-            "expected": ["-f", "-W", "3840", "-H", "1080"]
+            "expected": ["-f", "-W", "3840", "-H", "1080"],
         },
         "conflict_resolution": {
             "profiles": ["-f", "-W", "1920"],
             "overrides": ["--borderless", "-W", "2560"],
-            "expected": ["--borderless", "-W", "2560"]
+            "expected": ["--borderless", "-W", "2560"],
         },
         "multiple_profiles": {
             "profiles": [
                 ["-f", "-W", "1920"],
-                ["-H", "1080", "--framerate-limit", "60"]
+                ["-H", "1080", "--framerate-limit", "60"],
             ],
             "overrides": ["--framerate-limit", "120"],
-            "expected": ["-f", "-W", "1920", "-H", "1080", "--framerate-limit", "120"]
+            "expected": ["-f", "-W", "1920", "-H", "1080", "--framerate-limit", "120"],
         },
         "empty_profile": {
             "profiles": [],
             "overrides": ["-f", "-W", "1920"],
-            "expected": ["-f", "-W", "1920"]
+            "expected": ["-f", "-W", "1920"],
         },
         "empty_override": {
             "profiles": ["-f", "-W", "1920"],
             "overrides": [],
-            "expected": ["-f", "-W", "1920"]
+            "expected": ["-f", "-W", "1920"],
         },
         "complex_conflict": {
             "profiles": ["-f", "-W", "1920", "-H", "1080", "-C", "5"],
             "overrides": ["--borderless", "-W", "2560", "--framerate-limit", "120"],
-            "expected": ["--borderless", "-W", "2560", "-H", "1080", "-C", "5", "--framerate-limit", "120"]
-        }
+            "expected": [
+                "--borderless",
+                "-W",
+                "2560",
+                "-H",
+                "1080",
+                "-C",
+                "5",
+                "--framerate-limit",
+                "120",
+            ],
+        },
     }
