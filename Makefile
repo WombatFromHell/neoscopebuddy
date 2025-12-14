@@ -1,14 +1,12 @@
 PY = python3
 SRC_DIR = src
 BUILD_DIR = dist
-STAGING = .build
 ENTRY = entry:main
 OUT = $(BUILD_DIR)/nscb.pyz
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +; \
 	rm -rf \
-		$(STAGING) \
 		$(BUILD_DIR) \
 		.pytest_cache \
 		.ruff_cache \
@@ -16,12 +14,7 @@ clean:
 
 build: clean
 	mkdir -p $(BUILD_DIR)
-	rm -rf $(STAGING)
-	mkdir -p $(STAGING)
-	# Copy contents of src to staging root so nscb is at top level
-	cp -r $(SRC_DIR)/nscb $(STAGING)/
-	cp $(SRC_DIR)/entry.py $(STAGING)/
-	$(PY) -m zipapp $(STAGING) -o $(OUT) -m $(ENTRY) -p "/usr/bin/env python3"
+	$(PY) -m zipapp $(SRC_DIR) -o $(OUT) -m $(ENTRY) -p "/usr/bin/env python3"
 	chmod +x $(OUT)
 
 install: $(OUT)
@@ -40,13 +33,14 @@ test:
 	uv run pytest -xvs --cov=src --cov-report=term-missing --cov-branch
 
 lint:
-	ruff check --select I ./src ./tests --fix; \
+	ruff check ./src ./tests; \
 		pyright ./src ./tests
 
 prettier:
 	prettier --cache -c -w *.md
 
 format: prettier
+	ruff check --select I ./src ./tests --fix; \
 	ruff format ./src ./tests
 
 radon:
