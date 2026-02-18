@@ -1,35 +1,59 @@
-# Neoscope Buddy (nscb) - Agentic Tool Guide
+# Neoscope Buddy (nscb) - Agent Guide
 
-## Development Environment Tools
+**Profile-based gamescope wrapper utility** - Manages gamescope configurations via profiles with argument merging and override support.
 
-### Build System
+## Quick Commands
 
-- **Build zipapp package**: `make clean build` - Creates `./dist/nscb.pyz` using Python's `zipapp` module
-- **Install locally**: `make all` - Cleans the dev environment, builds, and installs to `~/.local/bin` with `nscb` symlink
+```bash
+make all          # Clean, build, install to ~/.local/bin
+make build        # Create dist/nscb.pyz (reproducible build)
+make test         # Run pytest with coverage
+make quality      # Run ty + ruff (type check + lint/format)
+make radon        # Code complexity metrics
+```
 
-### Code Quality Tools
+## Build System
 
-- **Run tests**: `make test` - Executes test suite using uv and pytest
-- **Code quality checks**: `make quality` - Runs ruff and pyright for linting and type checking
-- **Complexity metrics**: `make radon` - Analyzes code complexity
+- **Custom bundle workflow** (not zipapp) for bitwise-reproducible builds
+- Uses `SOURCE_DATE_EPOCH` (default: `315532800`) for deterministic timestamps
+- Version auto-extracted from `pyproject.toml`
+- SHA256 checksum generated at `dist/nscb.pyz.sha256sum`
 
-## Test Environment Tools
+## Testing
 
-### Test Execution
+- **Framework**: pytest with uv
+- **Markers**: `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.e2e`
+- **Mocking**: pytest-mock fixture
+- **Debug**: `NSCB_DEBUG=1` for detailed logging
 
-- **Run specific tests**: `uv run pytest -xvs tests/test_module.py` - Execute tests for a specific module
-- **Run with coverage**: `uv run pytest --cov=src --cov-report=term-missing --cov-branch` - Generate coverage report
-- **Debug tests**: `uv run pytest -xvs` - Verbose output with stdout capture disabled
+## Code Quality
 
-### Test Development
+- **Type checker**: ty
+- **Linter/Formatter**: ruff
+- **Enforcement**: `make quality` must pass before commits
 
-- **Add new tests**: Follow existing patterns in `tests/test_*.py` files
-- **Use mocking**: Utilize `pytest-mock` fixture for dependency isolation
-- **Test categories**: Use appropriate decorators (`@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.e2e`)
+## Project Structure
 
-## Workflow Considerations
+```
+src/
+├── entry.py              # Zipapp entry point
+└── nscb/
+    ├── application.py    # Main orchestrator
+    ├── profile_manager.py
+    ├── config_manager.py
+    ├── command_executor.py
+    ├── argument_processor.py
+    ├── system_detector.py
+    ├── environment_helper.py
+    ├── gamescope_args.py
+    ├── path_helper.py
+    ├── types.py
+    └── exceptions.py
+```
 
-- **Test-driven development**: Write tests before implementing new features
-- **Quality gates**: Run `make quality` to ensure linting/formatting validates code before committing changes
-- **Test validation**: Ensure all tests pass before considering work complete
-- **Debugging**: Use `NSCB_DEBUG=1` environment variable for detailed logging
+## Key Conventions
+
+- **TDD**: Write tests before features
+- **Quality gates**: Run `make quality` before committing
+- **Test validation**: All tests must pass
+- **Documentation**: See DESIGN.md (architecture) and REPRODUCIBLE_BUILDS.md (build system)

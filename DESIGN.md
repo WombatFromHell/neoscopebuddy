@@ -2,7 +2,7 @@
 
 ## System Overview
 
-NeoscopeBuddy (nscb.pyz) is a Python-based gamescope wrapper that provides a profile-based configuration system for managing gamescope settings. It enables users to define reusable gamescope configurations in a config file and apply them via command-line arguments with support for overrides. The application is packaged as a zipapp for easy distribution and execution.
+NeoscopeBuddy (nscb.pyz) is a Python-based gamescope wrapper that provides a profile-based configuration system for managing gamescope settings. It enables users to define reusable gamescope configurations in a config file and apply them via command-line arguments with support for overrides. The application is packaged as a custom ZIP bundle for easy distribution and execution.
 
 ### Core Purpose
 
@@ -34,7 +34,7 @@ graph TB
 
 ### Main Entry Point (`entry:main`)
 
-- Entry point for the application when packaged as zipapp
+- Entry point for the packaged application
 - Located in `src/entry.py`
 - Calls the `main` function from `nscb.application`
 - Handles global exception handling and returns appropriate exit codes
@@ -53,8 +53,8 @@ The application follows a modular architecture with the following directory stru
 
 ```
 src/
-├── entry.py          # Application entry point for zipapp packaging
-├── nscb/
+├── entry.py          # Application entry point
+└── nscb/
 │   ├── __init__.py
 │   ├── application.py    # Main application orchestrator
 │   ├── profile_manager.py # Profile parsing and merging logic
@@ -262,25 +262,34 @@ nscb.pyz -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
 
 ## Build System and Distribution
 
-The application uses a Makefile-based build system that packages the application as a zipapp for easy distribution:
+The application uses a custom Makefile-based build system that creates reproducible ZIP bundles. The custom bundle workflow ensures bitwise-identical artifacts across different build environments.
 
 ### Build Targets
 
-- `make build`: Creates the zipapp package (`dist/nscb.pyz`) using Python's zipapp module
-- `make install`: Installs the zipapp to `~/.local/bin` with a convenient symlink as `nscb`
-- `make clean`: Removes build artifacts and temporary files
+- `make build`: Creates the reproducible bundle (`dist/nscb.pyz`)
+- `make install`: Installs the bundle to `~/.local/bin` with checksum verification and `nscb` symlink
+- `make clean`: Removes build artifacts, caches, and temporary files
 - `make all`: Runs clean, build, and install in sequence
 - `make test`: Runs the test suite using uv and pytest
-- `make quality`: Runs code quality checks (ruff and pyright)
+- `make quality`: Runs code quality checks (ty, ruff)
 
 ### Packaging Approach
 
-The application uses Python's zipapp module to create a single executable file from the modular source code:
+The custom bundle workflow provides full control over determinism:
 
-1. Source code from `src/nscb/` is copied to a staging directory
-2. Entry point file `src/entry.py` is added to the staging directory
-3. Zipapp creates a single executable file `dist/nscb.pyz` with the entry point `entry:main`
-4. The resulting file can be executed directly with Python: `python3 nscb.pyz`
+1. Source code from `src/` is copied to a staging directory (`dist/staging/`)
+2. Version is injected into `application.py` in the staging directory (source remains unmodified)
+3. `__main__.py` is created with entry point: `from entry import main; main()`
+4. All file timestamps are normalized to `SOURCE_DATE_EPOCH` for reproducibility
+5. ZIP archive is created with deterministic file ordering using `LC_ALL=C sort`
+6. Shebang (`#!/usr/bin/env python3`) is prepended to create executable pyz
+7. SHA256 checksum is generated for verification
+
+See [REPRODUCIBLE_BUILDS.md](REPRODUCIBLE_BUILDS.md) for detailed documentation on the reproducible build system.
+
+### Reproducible Build Configuration
+
+The build uses `SOURCE_DATE_EPOCH` (default: `315532800` / Jan 1, 1980) to ensure reproducible timestamps. The version is automatically extracted from `pyproject.toml`.
 
 ## Data Flow Process
 
