@@ -226,7 +226,12 @@ class TestExceptionsUnit:
             ),
         ],
     )
-    def test_exception_polymorphism_parametrized(self, exc_class, msg, expected_msg):
+    def test_exception_polymorphism_parametrized(
+        self,
+        exc_class: type[NscbError],
+        msg: str | tuple[str, ...],
+        expected_msg: str,
+    ) -> None:
         """Test that different exceptions can be caught as NscbError using parametrization."""
         try:
             if isinstance(msg, tuple):
@@ -237,9 +242,10 @@ class TestExceptionsUnit:
             assert isinstance(e, exc_class)
             assert str(e) == expected_msg
 
-    def test_exception_polymorphism(self):
+    def test_exception_polymorphism(self) -> None:
         """Test that different exceptions can be caught as NscbError."""
-        exceptions_to_test = [
+        # Type ignored due to heterogeneous tuple types in the list
+        exceptions_to_test: list[tuple[type[NscbError], str | tuple[str, ...], str]] = [  # type: ignore[assignment]
             (NscbError, "base error", "base error"),
             (ConfigNotFoundError, "config_path", "Config file not found: config_path"),
             (ProfileNotFoundError, "profile_name", "Profile 'profile_name' not found"),

@@ -1,5 +1,11 @@
 .build
 .coverage
 .venv
+.pytest_cache
+.ruff_cache
+.venv
+.direnv
 __pycache__
 dist
+
+.coverage

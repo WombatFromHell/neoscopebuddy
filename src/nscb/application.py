@@ -12,6 +12,8 @@ from .profile_manager import ProfileManager
 from .system_detector import SystemDetector
 from .types import ArgsList, EnvExports, ExitCode
 
+__version__ = "{{VERSION}}"  # Replaced at build time
+
 
 def debug_log(message: str) -> None:
     """Log debug message when NSCB_DEBUG=1 is set."""
@@ -23,7 +25,7 @@ def debug_log(message: str) -> None:
 
 def print_help() -> None:
     """Print concise help message about nscb functionality."""
-    help_text = """neoscopebuddy - gamescope wrapper
+    help_text = f"""neoscopebuddy v{__version__} - gamescope wrapper
 Usage:
   nscb.pyz -p fullscreen -- /bin/mygame                 # Single profile
   nscb.pyz --profiles=profile1,profile2 -- /bin/mygame  # Multiple profiles

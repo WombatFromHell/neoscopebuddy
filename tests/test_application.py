@@ -41,7 +41,8 @@ class TestPrintHelp:
         output = captured.out
 
         # Check for key elements in the help message
-        assert "neoscopebuddy - gamescope wrapper" in output
+        assert "neoscopebuddy v" in output
+        assert "gamescope wrapper" in output
         assert "Usage:" in output
         assert "nscb.pyz -p fullscreen -- /bin/mygame" in output
         assert "Config file:" in output
@@ -185,8 +186,8 @@ class TestApplicationUnit:
         mock_config_result.__getitem__ = lambda x: mock_config_result.profiles.get(
             x, ""
         )
-        mock_config_result.get = (
-            lambda x, default=None: mock_config_result.profiles.get(x, default)
+        mock_config_result.get = lambda x, default=None: (
+            mock_config_result.profiles.get(x, default)
         )
 
         mock_config_manager.load_config.return_value = mock_config_result
@@ -236,8 +237,8 @@ class TestApplicationIntegration:
         mock_config_result.__getitem__ = lambda x: mock_config_result.profiles.get(
             x, ""
         )
-        mock_config_result.get = (
-            lambda x, default=None: mock_config_result.profiles.get(x, default)
+        mock_config_result.get = lambda x, default=None: (
+            mock_config_result.profiles.get(x, default)
         )
 
         # Mock file finding to return a fake path
