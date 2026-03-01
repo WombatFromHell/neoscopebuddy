@@ -27,6 +27,10 @@ clean:
 	.direnv \
 	.coverage
 
+configure:
+	uv venv --clear
+	uv sync --frozen
+
 build: clean
 	@echo "Building $(ARTIFACT) (version $(VERSION))"
 	@echo "SOURCE_DATE_EPOCH: $(SOURCE_DATE_EPOCH) ($(TIMESTAMP))"
@@ -92,7 +96,7 @@ lint:
 		uv run ruff check ./src ./tests --fix
 
 prettier:
-	uv run prettier -c -w *.md
+	prettier -c -w *.md
 
 format: prettier
 	uv run ruff check --select I ./src ./tests --fix; \
@@ -103,7 +107,9 @@ radon:
 
 quality: lint format
 
-all: clean build install
+ci: configure quality test build
 
-.PHONY: build install test lint prettier format radon quality clean all
-.SILENT: build install test lint prettier format radon quality clean all
+all: build install
+
+.PHONY: build install test lint prettier format radon quality clean all configure ci
+.SILENT: build install test lint prettier format radon quality clean all configure ci
