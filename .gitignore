@@ -1,3 +1,4 @@
+.container-home
 .build
 .coverage
 .venv
@@ -9,3 +10,4 @@ __pycache__
 dist
 
 .coverage
+Containerfile.dev
