@@ -6,41 +6,39 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-    }:
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+  }:
     flake-utils.lib.eachDefaultSystem (
-      system:
-      let
+      system: let
         pkgs = nixpkgs.legacyPackages.${system};
         # Read Python version from .python-version file (strip newline and dot)
-        pythonVersion = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./.python-version);
-        pythonAttr = builtins.replaceStrings [ "." ] [ "" ] pythonVersion;
+        pythonVersion = builtins.replaceStrings ["\n"] [""] (builtins.readFile ./.python-version);
+        pythonAttr = builtins.replaceStrings ["."] [""] pythonVersion;
         python = pkgs."python${pythonAttr}";
-      in
-      {
+      in {
         devShells.default = pkgs.mkShell {
           name = "neoscopebuddy";
 
-          buildInputs = [
+          packages = with pkgs; [
+            bashInteractive
+            coreutils
+            findutils
+            gawk
+            git
+            gnugrep
+            gnused
+            gnutar
+            jq
+            less
+            prettier
             python
-            pkgs.uv
-            pkgs.zip
-            pkgs.rsync
-            pkgs.gnused
-            pkgs.gnugrep
-            pkgs.coreutils
-            pkgs.prettier
-            pkgs.gnutar
-            pkgs.which
-            pkgs.gawk
-            pkgs.jq
-            pkgs.git
-            pkgs.less
-            pkgs.findutils
+            rsync
+            uv
+            which
+            zip
           ];
 
           shellHook = ''
