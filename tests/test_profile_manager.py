@@ -17,6 +17,15 @@ class TestProfileManagerUnit:
             (["-p", "a", "--profile=b", "cmd"], (["a", "b"], ["cmd"])),
             (["--profiles=gaming,streaming"], (["gaming", "streaming"], [])),
             (["--profiles="], ([], [])),
+            # Comma-separated via -p
+            (["-p", "std,fsr"], (["std", "fsr"], [])),
+            (["-p", "std, fsr"], (["std", "fsr"], [])),
+            (["-p", "a,b,c"], (["a", "b", "c"], [])),
+            # Comma-separated via --profile=
+            (["--profile=std,fsr"], (["std", "fsr"], [])),
+            (["--profile=a,b"], (["a", "b"], [])),
+            # Mixed: -p comma-separated with other args
+            (["-p", "std,fsr", "--borderless"], (["std", "fsr"], ["--borderless"])),
         ]
 
         for input_args, expected in test_cases:

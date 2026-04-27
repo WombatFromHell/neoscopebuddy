@@ -29,16 +29,21 @@ class ProfileManager:
                         profiles.append(p.strip())
                 i += 1
                 continue
-            # Handle -p and --profile (existing logic)
+            # Handle -p and --profile (supports comma-separated values)
             if arg in ("-p", "--profile"):
                 if i + 1 >= len(args):
                     raise ValueError(f"{arg} requires value")
-                profiles.append(args[i + 1])  # Fixed: was "forms" before
+                profile_list = args[i + 1].split(",")
+                for p in profile_list:
+                    if p.strip():
+                        profiles.append(p.strip())
                 i += 2
                 continue
             elif arg.startswith("--profile="):
-                profile_name = arg.split("=", 1)[1]
-                profiles.append(profile_name)
+                profile_list = arg.split("=", 1)[1].split(",")
+                for p in profile_list:
+                    if p.strip():
+                        profiles.append(p.strip())
                 i += 1
                 continue
 
