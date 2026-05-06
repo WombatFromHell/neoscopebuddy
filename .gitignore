@@ -4,10 +4,10 @@
 .venv
 .pytest_cache
 .ruff_cache
-.venv
 .direnv
+.pi
+result
 __pycache__
 dist
 
-.coverage
 Containerfile.dev
