@@ -81,26 +81,6 @@ class ProfileManager:
         return result + p_pos + o_pos + o_after
 
     @staticmethod
-    def _process_args_before_separator(
-        profile_args: ArgsList, override_args: ArgsList
-    ) -> tuple[list[FlagTuple], ArgsList, list[FlagTuple], ArgsList]:
-        """
-        Process the arguments before the '--' separator to separate flags and positionals.
-        """
-        from .argument_processor import ArgumentProcessor
-
-        p_before, o_before = (
-            ArgumentProcessor.split_at_separator(profile_args)[0],
-            ArgumentProcessor.split_at_separator(override_args)[0],
-        )
-
-        # Separate flags and positionals
-        p_flags, p_pos = ArgumentProcessor.separate_flags_and_positionals(p_before)
-        o_flags, o_pos = ArgumentProcessor.separate_flags_and_positionals(o_before)
-
-        return p_flags, p_pos, o_flags, o_pos
-
-    @staticmethod
     def _merge_flags(
         profile_flags: list[FlagTuple], override_flags: list[FlagTuple]
     ) -> list[FlagTuple]:

@@ -4,6 +4,9 @@ from .environment_helper import EnvironmentHelper
 from .path_helper import PathHelper
 
 
+# ponytail: thin pass-through; exists as a mock seam for tests that need to
+# stub find_executable / is_gamescope_active without patching PathHelper or
+# EnvironmentHelper directly.
 class SystemDetector:
     """Handles environment detection functionality."""
 

@@ -2,12 +2,13 @@
 """Main application orchestrator for NeoscopeBuddy."""
 
 import logging
+import shlex
 import sys
 from typing import Optional
 
 from .command_executor import CommandExecutor
 from .config_manager import ConfigManager
-from .exceptions import NscbError
+from .exceptions import ConfigNotFoundError, NscbError, ProfileNotFoundError
 from .profile_manager import ProfileManager
 from .system_detector import SystemDetector
 from .types import ArgsList, EnvExports, ExitCode
@@ -15,28 +16,57 @@ from .types import ArgsList, EnvExports, ExitCode
 __version__ = "{{VERSION}}"  # Replaced at build time
 
 
-def debug_log(message: str) -> None:
-    """Log debug message when NSCB_DEBUG=1 is set."""
-    import os
-
-    if os.environ.get("NSCB_DEBUG", "").lower() in ("1", "true", "yes", "on"):
-        print(f"[DEBUG] {message}", file=sys.stderr, flush=True)
-
-
 def print_help() -> None:
     """Print concise help message about nscb functionality."""
-    help_text = f"""neoscopebuddy v{__version__} - gamescope wrapper
-Usage:
-  nscb.pyz -p fullscreen -- /bin/mygame                 # Single profile
-  nscb.pyz --profiles=profile1,profile2 -- /bin/mygame  # Multiple profiles
-  nscb.pyz -p profile1 -p profile2 -- /bin/mygame       # Multiple profiles
-  nscb.pyz -p profile1 -W 3140 -H 2160 -- /bin/mygame   # Profile with overrides
+    print(
+        f"""\
+neoscopebuddy v{__version__} – gamescope wrapper
 
-  Config file: $XDG_CONFIG_HOME/nscb.conf or $HOME/.config/nscb.conf
-  Config format: KEY=VALUE (e.g., "fullscreen=-f")
-  Supports NSCB_PRE_CMD=.../NSCB_POST_CMD=... environment hooks
-"""
-    print(help_text)
+USAGE
+  nscb.pyz [--help]
+  nscb.pyz [-p profile[,...]] [--profile=profile[,...]]
+           [--profiles=profile[,...]] [gamescope flags] [-- app...]
+
+  If -- is present, everything after it is passed to the application.
+  Gamescope flags before -- override matching profile flags.
+
+PROFILES
+  -p, --profile       Select one or more comma-separated profiles
+  --profiles=         Same as --profile (alternative spelling)
+  Reserved names: help, export
+
+  Profile overrides:
+    nscb.pyz -p gaming -W 2560 -H 1440 -- /bin/mygame
+
+CONFIG FILE
+  Path: $XDG_CONFIG_HOME/nscb.conf  or  ~/.config/nscb.conf
+  Lines starting with # are comments.
+
+  Sections group args and exports per profile:
+    [gaming]
+    -f -W 1920 -H 1080
+    export MANGOHUD=1
+
+    [quiet]
+    -b
+
+  Global exports (before any section) always apply:
+    export DISPLAY=:0
+
+  Legacy flat syntax still works:
+    gaming=-f -W 1920 -H 1080
+    export MANGOHUD=1
+
+ENVIRONMENT HOOKS (optional)
+  NSCB_PRE_CMD=command      Run before gamescope
+  NSCB_POST_CMD=command     Run after gamescope exits
+  NSCB_DEBUG=1              Enable debug logging to stderr
+  NSCB_DISABLE_LD_PRELOAD_WRAP=1
+                            Skip preserving LD_PRELOAD to child process
+                            (by default, nscb re-injects LD_PRELOAD after
+                            gamescope strips it; set this to disable)
+  (Legacy names: NSCB_PRECMD, NSCB_POSTCMD)"""
+    )
 
 
 class Application:
@@ -89,26 +119,23 @@ class Application:
         """Process profiles and merge with arguments, returning both arguments and exports."""
         config_file = self.config_manager.find_config_file()
         if not config_file:
-            from .exceptions import ConfigNotFoundError
-
             raise ConfigNotFoundError("could not find nscb.conf")
 
         config_result = self.config_manager.load_config(config_file)
         merged_profiles = []
+        exports = dict(config_result.exports)
 
         for profile in profiles:
             if profile not in config_result.profiles:
-                from .exceptions import ProfileNotFoundError
-
-                raise ProfileNotFoundError(f"profile {profile} not found")
-            import shlex
-
-            merged_profiles.append(shlex.split(config_result.profiles[profile]))
+                raise ProfileNotFoundError(profile)
+            entry = config_result.profiles[profile]
+            merged_profiles.append(shlex.split(entry.args))
+            exports.update(entry.exports)
 
         final_args = self.profile_manager.merge_multiple_profiles(
             merged_profiles + [args]
         )
-        return final_args, config_result.exports
+        return final_args, exports
 
 
 def main() -> ExitCode:

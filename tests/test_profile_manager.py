@@ -554,19 +554,25 @@ class TestProfileManagerFixtureUtilization:
         basic_scenario = config_scenarios["basic"]
         config_path = temp_config_with_content(basic_scenario["content"])
         result = ConfigManager.load_config(config_path)
-        assert result.profiles == basic_scenario["expected_profiles"]
+        assert {k: v.args for k, v in result.profiles.items()} == basic_scenario[
+            "expected_profiles"
+        ]
         assert result.exports == basic_scenario["expected_exports"]
 
         # Test config with exports scenario
         exports_scenario = config_scenarios["with_exports"]
         config_path = temp_config_with_content(exports_scenario["content"])
         result = ConfigManager.load_config(config_path)
-        assert result.profiles == exports_scenario["expected_profiles"]
+        assert {k: v.args for k, v in result.profiles.items()} == exports_scenario[
+            "expected_profiles"
+        ]
         assert result.exports == exports_scenario["expected_exports"]
 
         # Test complex config scenario
         complex_scenario = config_scenarios["complex"]
         config_path = temp_config_with_content(complex_scenario["content"])
         result = ConfigManager.load_config(config_path)
-        assert result.profiles == complex_scenario["expected_profiles"]
+        assert {k: v.args for k, v in result.profiles.items()} == complex_scenario[
+            "expected_profiles"
+        ]
         assert result.exports == complex_scenario["expected_exports"]

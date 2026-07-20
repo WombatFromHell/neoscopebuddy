@@ -2,7 +2,7 @@
   description = "NeoscopeBuddy - Reproducible Python zipapp build environment";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-26.05-chilled/0.1";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -114,7 +114,7 @@
           (cd staging && find . \( -type d -o -type f \) | LC_ALL=C sort | zip -X -q -@ archive.zip)
 
           # Prepend shebang to create executable pyz
-          echo '#!/usr/bin/env python3' > $out
+          echo '#!/usr/bin/python3' > $out
           cat staging/archive.zip >> $out
           chmod +x $out
         '';

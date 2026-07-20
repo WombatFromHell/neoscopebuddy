@@ -1,6 +1,5 @@
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -525,74 +524,6 @@ def error_simulation():
 
 
 @pytest.fixture
-def mock_subprocess_success(mocker):
-    """
-    Fixture for mocking successful subprocess operations.
-
-    Provides a mocked subprocess that returns success status.
-
-    Usage:
-        def test_successful_execution(mock_subprocess_success):
-            # The subprocess is already mocked to return success
-            result = function_that_runs_subprocess()
-            assert result == 0
-    """
-    mock_process = Mock()
-    mock_process.stdout = Mock()
-    mock_process.stderr = Mock()
-    mock_process.wait.return_value = 0
-
-    mocker.patch.object(
-        mock_process.stdout, "readline", side_effect=["success output\n", ""]
-    )
-    mocker.patch.object(mock_process.stderr, "readline", side_effect=["", ""])
-
-    mock_selector = Mock()
-    mock_selector.get_map.return_value = [Mock()]
-    mock_selector.get_map.return_value = []
-    mock_selector.select.return_value = [(Mock(fileobj=mock_process.stdout), None)]
-
-    mocker.patch("subprocess.Popen", return_value=mock_process)
-    mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
-
-    return mock_process
-
-
-@pytest.fixture
-def mock_subprocess_failure(mocker):
-    """
-    Fixture for mocking failed subprocess operations.
-
-    Provides a mocked subprocess that returns failure status.
-
-    Usage:
-        def test_failed_execution(mock_subprocess_failure):
-            # The subprocess is already mocked to return failure
-            result = function_that_runs_subprocess()
-            assert result == 1
-    """
-    mock_process = Mock()
-    mock_process.stdout = Mock()
-    mock_process.stderr = Mock()
-    mock_process.wait.return_value = 1
-
-    mocker.patch.object(mock_process.stdout, "readline", side_effect=["", ""])
-    mocker.patch.object(
-        mock_process.stderr, "readline", side_effect=["error output\n", ""]
-    )
-
-    mock_selector = Mock()
-    mock_selector.get_map.return_value = [Mock()]
-    mock_selector.get_map.return_value = []
-    mock_selector.select.return_value = [(Mock(fileobj=mock_process.stderr), None)]
-
-    mocker.patch("subprocess.Popen", return_value=mock_process)
-    mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
-
-    return mock_process
-
-
-@pytest.fixture
 def test_config_content():
     """
     Fixture providing standard test configuration content.
@@ -623,32 +554,6 @@ export CUSTOM_VAR="value with spaces"
         "empty": "",
         "invalid": "invalid-line-without-equals\nanother-invalid",
     }
-
-
-@pytest.fixture
-def mock_subprocess(mocker):
-    """Fixture to mock subprocess operations."""
-    mock_process = Mock()
-    mock_process.stdout = Mock()
-    mock_process.stderr = Mock()
-    mock_process.wait.return_value = 0
-
-    mocker.patch.object(
-        mock_process.stdout, "readline", side_effect=["test output\n", ""]
-    )
-    mocker.patch.object(
-        mock_process.stderr, "readline", side_effect=["error output\n", ""]
-    )
-
-    mock_selector = Mock()
-    mock_selector.get_map.return_value = [Mock()]
-    mock_selector.get_map.return_value = []
-    mock_selector.select.return_value = [(Mock(fileobj=mock_process.stdout), None)]
-
-    mocker.patch("subprocess.Popen", return_value=mock_process)
-    mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
-
-    return mock_process
 
 
 @pytest.fixture

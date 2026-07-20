@@ -1,6 +1,7 @@
 """Tests for the exception classes in NeoscopeBuddy."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -245,7 +246,7 @@ class TestExceptionsUnit:
     def test_exception_polymorphism(self) -> None:
         """Test that different exceptions can be caught as NscbError."""
         # Type ignored due to heterogeneous tuple types in the list
-        exceptions_to_test: list[tuple[type[NscbError], str | tuple[str, ...], str]] = [  # type: ignore[assignment]
+        exceptions_to_test: list[tuple[type[NscbError], tuple[Any, ...] | str, str]] = [
             (NscbError, "base error", "base error"),
             (ConfigNotFoundError, "config_path", "Config file not found: config_path"),
             (ProfileNotFoundError, "profile_name", "Profile 'profile_name' not found"),
@@ -363,7 +364,7 @@ class TestExceptionsIntegration:
         result = app.run(["-p", "nonexistent"])  # Profile doesn't exist
 
         assert result == 1  # Error exit code
-        mock_log.assert_called_with("Profile 'profile nonexistent not found' not found")
+        mock_log.assert_called_with("Profile 'nonexistent' not found")
 
 
 class TestExceptionsEndToEnd:
@@ -628,9 +629,7 @@ class TestExceptionsEndToEnd:
         result = app.run(["-p", "nonexistent_profile"])
 
         assert result == 1
-        mock_log.assert_called_with(
-            "Profile 'profile nonexistent_profile not found' not found"
-        )
+        mock_log.assert_called_with("Profile 'nonexistent_profile' not found")
 
     def test_exception_message_consistency_e2e(self):
         """Test that exception messages are consistent and informative."""

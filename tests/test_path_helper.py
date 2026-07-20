@@ -78,68 +78,35 @@ class TestPathHelperUnit:
 
     def test_executable_exists_true(self, mocker):
         """Test executable exists when it's in PATH."""
-        test_executable = "test_executable"
-        with tempfile.TemporaryDirectory() as temp_dir:
-            exec_path = Path(temp_dir) / test_executable
-            # Create an executable file
-            exec_path.touch()
-            exec_path.chmod(0o755)
-
-            # Patch PATH to include our temp directory
-            mocker.patch.dict("os.environ", {"PATH": f"{temp_dir}:/usr/bin:/bin"})
-            mocker.patch.object(Path, "exists", return_value=True)
-            mocker.patch.object(Path, "is_file", return_value=True)
-            mocker.patch.object(Path, "is_dir", return_value=True)
-            mocker.patch("os.access", return_value=True)
-
-            assert PathHelper.executable_exists(test_executable) is True
+        mocker.patch("shutil.which", return_value="/usr/bin/test_executable")
+        assert PathHelper.executable_exists("test_executable") is True
 
     def test_executable_exists_false(self, mocker):
         """Test executable exists returns False when not in PATH."""
-        mocker.patch.dict("os.environ", {"PATH": ""}, clear=True)
+        mocker.patch("shutil.which", return_value=None)
         assert PathHelper.executable_exists("nonexistent_executable") is False
 
     def test_executable_exists_empty_path(self, mocker):
         """Test executable exists when PATH is empty."""
-        mocker.patch("os.environ.get", return_value="")
+        mocker.patch("shutil.which", return_value=None)
         assert PathHelper.executable_exists("any_executable") is False
 
     @pytest.mark.parametrize(
-        "path_env,access_result,expected",
+        "which_result,expected",
         [
-            ("", False, False),  # Empty PATH
-            ("/nonexistent", False, False),  # Non-existent path
-            ("/usr/bin", True, True),  # Valid path with access
+            ("/usr/bin/test_executable", True),
+            (None, False),
         ],
     )
-    def test_executable_exists_parametrized(
-        self, mocker, path_env, access_result, expected
-    ):
-        """Test executable_exists with different PATH environments using parametrization."""
-        mocker.patch.dict("os.environ", {"PATH": path_env}, clear=True)
-        if path_env:  # Only mock file system if there's a path to check
-            mocker.patch.object(Path, "exists", return_value=access_result)
-            mocker.patch.object(Path, "is_file", return_value=access_result)
-            mocker.patch.object(Path, "is_dir", return_value=True)
-            mocker.patch("os.access", return_value=access_result)
-
+    def test_executable_exists_parametrized(self, mocker, which_result, expected):
+        """Test executable_exists with different shutil.which results using parametrization."""
+        mocker.patch("shutil.which", return_value=which_result)
         result = PathHelper.executable_exists("test_executable")
         assert result == expected
 
-    def test_executable_exists_no_exec_permission(self, mocker, tmp_path):
-        """Test executable exists returns False when file exists but no exec permission."""
-        # Create a non-executable file in a temp directory
-        exec_path = tmp_path / "test_exec"
-        exec_path.touch()  # Create file without execute permission
-
-        mocker.patch.dict("os.environ", {"PATH": str(tmp_path)})
-
-        # Mock the path operations to simulate the file exists but isn't executable
-        mocker.patch.object(Path, "exists", return_value=True)
-        mocker.patch.object(Path, "is_file", return_value=True)
-        mocker.patch.object(Path, "is_dir", return_value=True)
-        mocker.patch("os.access", return_value=False)  # No execute permission
-
+    def test_executable_exists_no_exec_permission(self, mocker):
+        """Test executable exists returns False when file has no exec permission."""
+        mocker.patch("shutil.which", return_value=None)
         assert PathHelper.executable_exists("test_exec") is False
 
 
@@ -148,17 +115,9 @@ class TestPathHelperIntegration:
 
     def test_path_helper_system_detector_integration(self, mocker):
         """Test PathHelper working with SystemDetector for executable detection."""
-        # Both modules use executable checking functionality
         test_executable = "gamescope"
+        mocker.patch("shutil.which", return_value="/usr/bin/gamescope")
 
-        # Mock the path operations to simulate executable found
-        mocker.patch.dict("os.environ", {"PATH": "/usr/bin:/bin"}, clear=True)
-        mocker.patch.object(Path, "exists", return_value=True)
-        mocker.patch.object(Path, "is_file", return_value=True)
-        mocker.patch.object(Path, "is_dir", return_value=True)
-        mocker.patch("os.access", return_value=True)
-
-        # Test that both SystemDetector and PathHelper can find the executable
         path_helper_result = PathHelper.executable_exists(test_executable)
         system_detector_result = SystemDetector.find_executable(test_executable)
 
@@ -185,7 +144,7 @@ class TestPathHelperIntegration:
         if config_path is not None:
             config_result = ConfigManager.load_config(config_path)
             assert "gaming" in config_result.profiles
-            assert config_result.profiles["gaming"] == "-f -W 1920 -H 1080"
+            assert config_result.profiles["gaming"].args == "-f -W 1920 -H 1080"
 
     def test_path_helper_application_integration(
         self, mocker, temp_config_with_content
@@ -233,30 +192,21 @@ class TestPathHelperEndToEnd:
             config_result = ConfigManager.load_config(result_path)
             assert "performance" in config_result.profiles
             assert (
-                config_result.profiles["performance"] == "-f -W 2560 -H 1440 --mangoapp"
+                config_result.profiles["performance"].args
+                == "-f -W 2560 -H 1440 --mangoapp"
             )
 
     def test_executable_detection_comprehensive_e2e(self, mocker):
         """Test comprehensive executable detection scenarios."""
-        # Test various scenarios for executable detection
         test_cases = [
-            # (path_env, executable_exists, expected_result)
-            ("/usr/bin:/bin", True, True),
-            ("", False, False),
-            ("/nonexistent", False, False),
+            ("/usr/bin/gamescope", True),
+            (None, False),
         ]
 
-        for path_env, mock_exists, _expected_result in test_cases:
-            mocker.patch.dict("os.environ", {"PATH": path_env}, clear=True)
-            if path_env:  # Only mock file system if there's a path to check
-                mocker.patch.object(Path, "exists", return_value=mock_exists)
-                mocker.patch.object(Path, "is_file", return_value=mock_exists)
-                mocker.patch.object(Path, "is_dir", return_value=True)
-                mocker.patch("os.access", return_value=mock_exists)
-
+        for which_result, expected in test_cases:
+            mocker.patch("shutil.which", return_value=which_result)
             result = PathHelper.executable_exists("gamescope")
-            # The result depends on mocking but should not crash
-            assert isinstance(result, bool)
+            assert result == expected
 
     def test_config_file_workflow_full_e2e(self, mocker, temp_config_with_content):
         """Test full configuration file workflow using PathHelper."""
@@ -319,4 +269,4 @@ export MANGOHUD=1
         if result is not None:
             config_result = ConfigManager.load_config(result)
             assert "gaming" in config_result.profiles
-            assert config_result.profiles["gaming"] == "-f -W 1920 -H 1080"
+            assert config_result.profiles["gaming"].args == "-f -W 1920 -H 1080"

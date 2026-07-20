@@ -1,54 +1,26 @@
 """Tests for the command execution functionality in NeoscopeBuddy."""
 
-import selectors
-
 import pytest
 
-from nscb.command_executor import CommandExecutor, debug_log
+from nscb.command_executor import CommandExecutor
 from nscb.system_detector import SystemDetector
 
 
 class TestCommandExecutorUnit:
     """Unit tests for the CommandExecutor class."""
 
-    def test_debug_log_no_output_when_disabled(self, capsys, monkeypatch):
-        """Test that debug_log doesn't output when NSCB_DEBUG is not set."""
-        monkeypatch.delenv("NSCB_DEBUG", raising=False)
-        debug_log("test message")
-        captured = capsys.readouterr()
-        assert "test message" not in captured.err
-
-    @pytest.mark.parametrize(
-        "debug_value", ["1", "true", "yes", "on", "TRUE", "YES", "ON"]
-    )
-    def test_debug_log_outputs_when_enabled(self, capsys, monkeypatch, debug_value):
-        """Test that debug_log outputs when NSCB_DEBUG is set to truthy values."""
-        monkeypatch.setenv("NSCB_DEBUG", debug_value)
-        test_message = "debug test message"
-        debug_log(test_message)
-        captured = capsys.readouterr()
-        assert f"[DEBUG] {test_message}" in captured.err
-
     def test_run_nonblocking_signature(self):
         import inspect
 
         sig = inspect.signature(CommandExecutor.run_nonblocking)
-        assert len(sig.parameters) == 1
+        assert len(sig.parameters) == 2
         assert "cmd" in sig.parameters
+        assert "extra_env" in sig.parameters
 
     def test_run_nonblocking_with_mocked_subprocess(self, mocker):
-        # Mock subprocess.Popen to avoid actual process creation
-        mock_process = mocker.MagicMock()
-        mock_process.stdout.readline.return_value = ""
-        mock_process.stderr.readline.return_value = ""
-        mock_process.wait.return_value = 0
-
-        mock_selector = mocker.MagicMock()
-        mock_selector.get_map.return_value = []
-        mock_selector.select.return_value = []
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+        mock_result = mocker.MagicMock()
+        mock_result.returncode = 0
+        mocker.patch("subprocess.run", return_value=mock_result)
 
         result = CommandExecutor.run_nonblocking("echo test")
         assert result == 0
@@ -66,38 +38,17 @@ class TestCommandExecutorErrorHandling:
         This demonstrates how to use the error_simulation_comprehensive fixture to test
         various error scenarios in command execution.
         """
-        from nscb.command_executor import CommandExecutor
-
         # Test subprocess execution failure
-        mock_process = mocker.MagicMock()
-        mock_process.wait.return_value = 1
-        mock_process.stdout.readline.return_value = ""
-        mock_process.stderr.readline.return_value = "Command failed\n"
+        mock_result = mocker.MagicMock()
+        mock_result.returncode = 1
+        mocker.patch("subprocess.run", return_value=mock_result)
 
-        mock_selector = mocker.MagicMock()
-        mock_selector.get_map.return_value = []
-        mock_selector.select.return_value = []
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
-
-        # Test that subprocess errors are handled properly
         result = CommandExecutor.run_nonblocking("nonexistent_command")
         assert result == 1
 
-        # Test IOError handling during subprocess operations
-        # Reset the process to success mode first
-        mock_process.wait.return_value = 0
-        mock_process.stdout.readline.side_effect = error_simulation_comprehensive[
-            "file_system"
-        ]["permission_denied"]
-        mock_process.stderr.readline.side_effect = error_simulation_comprehensive[
-            "file_system"
-        ]["permission_denied"]
-
-        # This should handle the IOError gracefully
+        # Test successful execution
+        mock_result.returncode = 0
         result = CommandExecutor.run_nonblocking("test_command")
-        # Should still return the process exit code even with IO errors
         assert result == 0
 
     def test_environment_command_error_handling(self, mock_env_commands, mocker):
@@ -107,31 +58,19 @@ class TestCommandExecutorErrorHandling:
         This demonstrates how to use the mock_env_commands fixture to test
         pre/post command execution scenarios.
         """
-        from nscb.command_executor import CommandExecutor
-
         # Setup environment commands
         mock_env_commands("echo 'pre-command'", "echo 'post-command'")
 
-        # Mock the actual command execution
-        mock_process = mocker.MagicMock()
-        mock_process.wait.return_value = 0
-        mock_process.stdout.readline.return_value = ""
-        mock_process.stderr.readline.return_value = ""
-
-        mock_selector = mocker.MagicMock()
-        mock_selector.get_map.return_value = []
-        mock_selector.select.return_value = []
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+        # Mock subprocess.run
+        mock_result = mocker.MagicMock()
+        mock_result.returncode = 0
+        mocker.patch("subprocess.run", return_value=mock_result)
 
         # Test that environment commands are handled properly
         result = CommandExecutor.run_nonblocking("test_command")
         assert result == 0
 
         # Verify that the environment commands were set up correctly
-        from nscb.command_executor import CommandExecutor
-
         pre_cmd, post_cmd = CommandExecutor.get_env_commands()
         assert pre_cmd == "echo 'pre-command'"
         assert post_cmd == "echo 'post-command'"
@@ -211,174 +150,23 @@ class TestCommandExecutorFixtureUtilization:
         expected_with_semicolons = "; ".join(complex_scenario["args"])
         assert result == expected_with_semicolons
 
-    def test_subprocess_scenarios_with_fixtures(self, mock_subprocess, mocker):
-        """
-        Test subprocess handling using the consolidated subprocess fixture.
-
-        This demonstrates how to use the consolidated mock_subprocess fixture
-        to test various subprocess execution scenarios in a standardized way.
-        """
-        # Test that the consolidated fixture is working by verifying it mocks subprocess correctly
-        import subprocess
-
-        assert hasattr(subprocess, "Popen")
-        assert callable(subprocess.Popen)
-
-        # Test the default success behavior (exit code 0)
-        assert mock_subprocess.wait.return_value == 0
-
-        # Test that we can configure the fixture for failure scenarios
-        mock_subprocess.wait.return_value = 1
-        mocker.patch.object(
-            mock_subprocess.stderr, "readline", side_effect=["error output\n", ""]
-        )
-        assert mock_subprocess.wait.return_value == 1
-
-        # Reset to success for other tests
-        mock_subprocess.wait.return_value = 0
-        mocker.patch.object(mock_subprocess.stderr, "readline", side_effect=["", ""])
-
     def test_run_nonblocking_with_empty_output(self, mocker):
         """Test run_nonblocking with command that produces no output."""
-        mock_process = mocker.MagicMock()
-        mock_process.stdout.readline.return_value = ""
-        mock_process.stderr.readline.return_value = ""
-        mock_process.wait.return_value = 0
-        mock_stdout = mocker.Mock()
-        mock_stderr = mocker.Mock()
-        mock_process.stdout = mock_stdout
-        mock_process.stderr = mock_stderr
-
-        mock_selector = mocker.MagicMock()
-        # Track call count to eventually return empty map and break the while loop
-        call_count = 0
-
-        def get_map():
-            nonlocal call_count
-            call_count += 1
-            # Return empty map after first call to break out of the while loop
-            if call_count == 1:
-                return {id(mock_process.stdout): mock_process.stdout}
-            return {}
-
-        mock_selector.get_map.side_effect = get_map
-        mock_selector.select.return_value = [
-            (mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)
-        ]
-
-        # Mock sys.stdout and sys.stderr to prevent write errors
-        mocker.patch("sys.stdout")
-        mocker.patch("sys.stderr")
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+        mock_result = mocker.MagicMock()
+        mock_result.returncode = 0
+        mocker.patch("subprocess.run", return_value=mock_result)
 
         result = CommandExecutor.run_nonblocking("echo ''")
         assert result == 0
 
     def test_run_nonblocking_with_immediate_failure(self, mocker):
-        """Test run_nonblocking with command that fails immediately (lines 43-52)."""
-        mock_process = mocker.MagicMock()
-        mock_process.stdout.readline.return_value = ""
-        mock_process.stderr.readline.return_value = ""
-        mock_process.wait.return_value = 1  # Non-zero exit code
-        mock_process.stdout = mocker.Mock()
-        mock_process.stderr = mocker.Mock()
-
-        mock_selector = mocker.MagicMock()
-        mock_selector.get_map.return_value = {}
-        mock_selector.select.return_value = []
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+        """Test run_nonblocking with command that fails immediately."""
+        mock_result = mocker.MagicMock()
+        mock_result.returncode = 1
+        mocker.patch("subprocess.run", return_value=mock_result)
 
         result = CommandExecutor.run_nonblocking("false")
         assert result == 1
-
-    def test_run_nonblocking_with_stdout_stderr_mix(self, mocker):
-        """Test run_nonblocking with both stdout and stderr output (lines 43-52)."""
-        mock_stdout = mocker.MagicMock()
-        mock_stdout.readline.side_effect = ["stdout line 1\n", "stdout line 2\n", ""]
-        mock_stdout.__hash__ = lambda: 123  # For selector key
-        mock_stderr = mocker.MagicMock()
-        mock_stderr.readline.side_effect = ["stderr line 1\n", ""]
-        mock_stderr.__hash__ = lambda: 456  # For selector key
-
-        mock_process = mocker.MagicMock()
-        mock_process.stdout = mock_stdout
-        mock_process.stderr = mock_stderr
-        mock_process.wait.return_value = 0
-
-        mock_selector = mocker.MagicMock()
-        mock_selector_map = {
-            123: mocker.Mock(fileobj=mock_stdout),
-            456: mocker.Mock(fileobj=mock_stderr),
-        }
-        call_count = 0
-
-        def get_map():
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 3:  # Return maps for 3 iterations
-                return mock_selector_map
-            return {}  # Empty after that
-
-        mock_selector.get_map.side_effect = get_map
-
-        # Simulate selector.select() returning both stdout and stderr in different calls
-        def select():
-            if call_count == 1:
-                return [(mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)]
-            elif call_count == 2:
-                return [(mocker.Mock(fileobj=mock_stderr), selectors.EVENT_READ)]
-            elif call_count == 3:
-                return [(mocker.Mock(fileobj=mock_stdout), selectors.EVENT_READ)]
-            return []
-
-        mock_selector.select.side_effect = select
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
-        mocker.patch("sys.stdout")
-        mocker.patch("sys.stderr")
-
-        result = CommandExecutor.run_nonblocking("echo test")
-        assert result == 0
-
-    def test_run_nonblocking_process_exception_handling(self, mocker):
-        """Test run_nonblocking exception handling when selector operations fail."""
-        mock_process = mocker.MagicMock()
-        mock_process.stdout = mocker.Mock()
-        mock_process.stderr = mocker.Mock()
-        mock_process.wait.return_value = 0
-
-        # Make readline raise an exception to test error handling
-        mock_process.stdout.readline.side_effect = IOError("Read error")
-        mock_process.stderr.readline.side_effect = IOError("Read error")
-
-        mock_selector = mocker.MagicMock()
-        # Track call count to eventually return empty map and break the while loop
-        call_count = 0
-
-        def get_map():
-            nonlocal call_count
-            call_count += 1
-            # Return empty map after first call to break out of the while loop
-            if call_count == 1:
-                return {id(mock_process.stdout): mock_process.stdout}
-            return {}
-
-        mock_selector.get_map.side_effect = get_map
-        mock_selector.select.return_value = [
-            (mocker.Mock(fileobj=mock_process.stdout), selectors.EVENT_READ)
-        ]
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
-
-        # We expect this to handle the IOError gracefully and return the process exit code
-        result = CommandExecutor.run_nonblocking("echo test")
-        assert result == 0
 
     @pytest.mark.parametrize(
         "env_vars,expected",
@@ -495,18 +283,10 @@ class TestCommandExecutorModuleIntegration:
             return_value=False,
         )
 
-        # Mock subprocess to prevent actual execution
-        mock_process = mocker.MagicMock()
-        mock_process.stdout.readline.return_value = ""
-        mock_process.stderr.readline.return_value = ""
-        mock_process.wait.return_value = 0
-
-        mock_selector = mocker.MagicMock()
-        mock_selector.get_map.return_value = []
-        mock_selector.select.return_value = []
-
-        mocker.patch("subprocess.Popen", return_value=mock_process)
-        mocker.patch("selectors.DefaultSelector", return_value=mock_selector)
+        # Mock subprocess.run to prevent actual execution
+        mock_result = mocker.MagicMock()
+        mock_result.returncode = 0
+        mocker.patch("subprocess.run", return_value=mock_result)
 
         # Test build_command functionality
         pre_cmd, post_cmd = CommandExecutor.get_env_commands()
@@ -756,16 +536,10 @@ class TestCommandExecutorEndToEnd:
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         args = ["-f", "-W", "1920"]  # No -- separator
-        exports = {"TEST_VAR": "test_value"}
-        result = CommandExecutor._build_inactive_gamescope_command(
-            args, "", "", exports
-        )
+        result = CommandExecutor._build_inactive_gamescope_command(args, "", "")
 
-        # Should build a command that executes exports and then gamescope
-        assert (
-            "env TEST_VAR=test_value true" in result
-        )  # Export command (shlex.quote doesn't add quotes for simple values)
-        assert "gamescope -f -W 1920" in result  # Gamescope command
+        # Should build a command with gamescope and the args directly
+        assert "gamescope -f -W 1920" in result
 
     def test_build_active_gamescope_command_no_separator(self, mocker, monkeypatch):
         """Test _build_active_gamescope_command when no -- separator is found."""
@@ -824,12 +598,10 @@ class TestCommandExecutorEndToEnd:
         monkeypatch.setattr("os.environ.get", mock_environ_get)
 
         args = ["-f", "-W", "1920"]  # No -- separator
-        exports = {"TEST_VAR": "test_value"}
-        result = CommandExecutor._build_active_gamescope_command(args, "", "", exports)
+        result = CommandExecutor._build_active_gamescope_command(args, "", "")
 
-        # Should build a command that executes the exports
-        assert "env TEST_VAR=test_value" in result
-        # In active gamescope with exports but no app args, no 'true' is added since there are no app args to execute
+        # Should return empty string when no pre/post commands and no app args
+        assert result == ""
 
     def test_execute_gamescope_command_empty_scenario(self, mocker):
         """Test execute_gamescope_command when no command to execute is built."""

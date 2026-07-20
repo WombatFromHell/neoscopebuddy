@@ -4,57 +4,33 @@ import pytest
 
 from nscb.application import Application
 from nscb.config_manager import ConfigManager
-from nscb.config_result import ConfigResult
+from nscb.config_result import ConfigResult, ProfileEntry
 
 
 class TestConfigResultUnit:
     """Unit tests for the ConfigResult container."""
 
     def test_config_result_initialization(self):
-        profiles = {"gaming": "-f -W 1920"}
+        profiles = {"gaming": ProfileEntry("-f -W 1920")}
         exports = {"VAR": "value"}
         result = ConfigResult(profiles, exports)
         assert result.profiles == profiles
         assert result.exports == exports
 
-    def test_config_result_contains_method(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert "gaming" in result
-        assert "nonexistent" not in result
-
-    def test_config_result_getitem_method(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert result["gaming"] == "-f -W 1920"
-
-    def test_config_result_get_method(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert result.get("gaming") == "-f -W 1920"
-        assert result.get("nonexistent") is None
-        assert result.get("nonexistent", "default") == "default"
-
-    def test_config_result_keys_values_items(self):
-        profiles = {"gaming": "-f -W 1920", "streaming": "--borderless -W 1280"}
-        result = ConfigResult(profiles, {})
-
-        assert set(result.keys()) == {"gaming", "streaming"}
-        assert set(result.values()) == {"-f -W 1920", "--borderless -W 1280"}
-        assert set(result.items()) == {
-            ("gaming", "-f -W 1920"),
-            ("streaming", "--borderless -W 1280"),
-        }
-
     @pytest.mark.parametrize(
         "profiles,exports,expected_profiles,expected_exports",
         [
-            ({"gaming": "-f -W 1920"}, {}, {"gaming": "-f -W 1920"}, {}),
+            (
+                {"gaming": ProfileEntry("-f -W 1920")},
+                {},
+                {"gaming": ProfileEntry("-f -W 1920")},
+                {},
+            ),
             ({}, {"VAR": "value"}, {}, {"VAR": "value"}),
             (
-                {"gaming": "-f -W 1920"},
+                {"gaming": ProfileEntry("-f -W 1920")},
                 {"VAR": "value"},
-                {"gaming": "-f -W 1920"},
+                {"gaming": ProfileEntry("-f -W 1920")},
                 {"VAR": "value"},
             ),
             ({}, {}, {}, {}),
@@ -66,12 +42,6 @@ class TestConfigResultUnit:
         result = ConfigResult(profiles, exports)
         assert result.profiles == expected_profiles
         assert result.exports == expected_exports
-
-    def test_config_result_equality_with_dict(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert result == profiles
-        assert result != {"different": "content"}
 
 
 class TestConfigResultIntegration:
@@ -90,7 +60,7 @@ class TestConfigResultIntegration:
 
         # Verify content
         assert "gaming" in result.profiles
-        assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
+        assert result.profiles["gaming"].args == "-f -W 1920 -H 1080"
         assert "DISPLAY" in result.exports
         assert result.exports["DISPLAY"] == ":0"
 
@@ -110,8 +80,8 @@ class TestConfigResultIntegration:
         config_result = ConfigManager.load_config(config_path)
 
         # Use the config result to get profile data for ProfileManager
-        profile_args_str = config_result.profiles.get("performance", "")
-        profile_args = profile_args_str.split() if profile_args_str else []
+        entry = config_result.profiles.get("performance")
+        profile_args = entry.args.split() if entry else []
 
         # Verify we got the expected args
         assert "-f" in profile_args
@@ -172,9 +142,9 @@ export VAR2='single quoted value'
         assert "streaming" in config_result.profiles
 
         # Verify profile content
-        assert config_result.profiles["performance"] == "-f -W 2560 -H 1440"
+        assert config_result.profiles["performance"].args == "-f -W 2560 -H 1440"
         assert (
-            config_result.profiles["streaming"]
+            config_result.profiles["streaming"].args
             == "--borderless -W 1920 -H 1080 --framerate-limit=60"
         )
 
@@ -190,12 +160,12 @@ export VAR2='single quoted value'
         assert config_result.exports["VAR1"] == "value with spaces"
         assert config_result.exports["VAR2"] == "single quoted value"
 
-        # Test dictionary-like access
-        assert config_result["performance"] == "-f -W 2560 -H 1440"
-        assert config_result.get("nonexistent", "default") == "default"
+        # Test dictionary-like access on profiles
+        assert config_result.profiles["performance"].args == "-f -W 2560 -H 1440"
+        assert config_result.profiles.get("nonexistent", "default") == "default"
 
         # Test iteration capabilities
-        profile_keys = set(config_result.keys())
+        profile_keys = set(config_result.profiles.keys())
         expected_keys = {"performance", "streaming"}
         assert profile_keys == expected_keys
 
@@ -244,7 +214,7 @@ streaming-low=-W 1280 -H 720 --framerate-limit=30 --backend sdl2
         assert set(config_result.exports.keys()) & expected_exports == expected_exports
 
         # Verify complex profile content
-        perf_content = config_result.profiles["performance"]
+        perf_content = config_result.profiles["performance"].args
         assert "-f" in perf_content
         assert "2560" in perf_content
         assert "--mangoapp" in perf_content

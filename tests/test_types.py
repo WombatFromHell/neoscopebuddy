@@ -7,11 +7,9 @@ from nscb.argument_processor import ArgumentProcessor
 from nscb.profile_manager import ProfileManager
 from nscb.types import (
     ArgsList,
-    ConfigData,
     EnvExports,
     ExitCode,
     FlagTuple,
-    ProfileArgs,
     ProfileArgsList,
 )
 
@@ -40,26 +38,6 @@ class TestTypesUnit:
         assert flag_without_value[0] == "-f"
         assert flag_without_value[1] is None
 
-    def test_profile_args_type(self):
-        """Test ProfileArgs type alias."""
-        profiles: ProfileArgs = {
-            "gaming": "-f -W 1920 -H 1080",
-            "streaming": "--borderless -W 1280 -H 720",
-        }
-        assert isinstance(profiles, dict)
-        assert all(isinstance(k, str) for k in profiles.keys())
-        assert all(isinstance(v, str) for v in profiles.values())
-
-    def test_config_data_type(self):
-        """Test ConfigData type alias."""
-        config: ConfigData = {
-            "profile1": "-f -W 1920",
-            "profile2": "--borderless -W 1280",
-        }
-        assert isinstance(config, dict)
-        assert all(isinstance(k, str) for k in config.keys())
-        assert all(isinstance(v, str) for v in config.values())
-
     def test_env_exports_type(self):
         """Test EnvExports type alias."""
         exports: EnvExports = {"VAR1": "value1", "VAR2": "value2"}
@@ -72,8 +50,6 @@ class TestTypesUnit:
         [
             (ArgsList, ["-f", "-W", "1920", "--", "app.exe"], list),
             (FlagTuple, ("-W", "1920"), tuple),
-            (ProfileArgs, {"gaming": "-f -W 1920 -H 1080"}, dict),
-            (ConfigData, {"profile1": "-f -W 1920"}, dict),
             (EnvExports, {"VAR1": "value1"}, dict),
             (ExitCode, 0, int),
             (ProfileArgsList, [["-f", "-W", "1920"]], list),
@@ -101,11 +77,7 @@ class TestTypesUnit:
                 )
         elif expected_type is dict:
             assert all(isinstance(k, str) for k in test_value.keys())
-            assert (
-                all(isinstance(v, str) for v in test_value.values())
-                if test_type in [ProfileArgs, ConfigData, EnvExports]
-                else True
-            )
+            assert all(isinstance(v, str) for v in test_value.values())
         elif expected_type is int:
             assert test_value == 0  # ExitCode 0 case
 
@@ -137,27 +109,6 @@ class TestTypesUnit:
 
 class TestTypesIntegration:
     """Integration tests for types with other modules."""
-
-    def test_type_usage_in_config_manager(self):
-        """Test how types are used in ConfigManager."""
-        # ConfigData type usage in ConfigManager
-        config_data: ConfigData = {
-            "gaming": "-f -W 1920 -H 1080",
-            "streaming": "--borderless -W 1280 -H 720",
-        }
-
-        # This simulates how ConfigManager would use the type
-        assert isinstance(config_data, dict)
-        assert all(
-            isinstance(k, str) and isinstance(v, str) for k, v in config_data.items()
-        )
-
-        # EnvExports type usage in ConfigManager
-        env_exports: EnvExports = {"VAR1": "value1", "VAR2": "value2"}
-        assert isinstance(env_exports, dict)
-        assert all(
-            isinstance(k, str) and isinstance(v, str) for k, v in env_exports.items()
-        )
 
     def test_type_usage_in_profile_manager(self):
         """Test how types are used in ProfileManager."""
@@ -207,20 +158,15 @@ export PROTON_ENABLE_FSR=1
 """
         config_path = temp_config_with_content(config_data)
 
-        # Define variables using the type aliases
         args_list: ArgsList = ["-p", "gaming", "--borderless", "--", "test_app"]
-        profile_args: ProfileArgs = {"gaming": "-f -W 1920 -H 1080 --mangoapp"}
-        config_data_type: ConfigData = {"gaming": "-f -W 1920 -H 1080 --mangoapp"}
         env_exports: EnvExports = {"PROTON_ENABLE_FSR": "1"}
         exit_code: ExitCode = 0
         profile_args_list: ProfileArgsList = [
             ["-f", "-W", "1920", "-H", "1080", "--mangoapp"]
         ]
 
-        # Set up application and run with the typed arguments
         app = Application()
 
-        # Mock required components
         mocker.patch(
             "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
         )
@@ -232,23 +178,18 @@ export PROTON_ENABLE_FSR=1
             return_value=exit_code,
         )
 
-        # Run the application
         result: ExitCode = app.run(args_list)
 
-        # Verify types were used correctly and function properly
         assert isinstance(result, int)
-        assert result in [0, 1]  # Could be either depending on execution
+        assert result in [0, 1]
         assert isinstance(args_list, list)
         assert all(isinstance(arg, str) for arg in args_list)
-        assert isinstance(profile_args, dict)
-        assert isinstance(config_data_type, dict)
         assert isinstance(env_exports, dict)
         assert isinstance(exit_code, int)
         assert isinstance(profile_args_list, list)
 
     def test_types_in_complex_argument_processing_e2e(self):
         """Test types in complex argument processing scenarios."""
-        # Test ArgsList
         args_list: ArgsList = [
             "-f",
             "-W",
@@ -262,18 +203,15 @@ export PROTON_ENABLE_FSR=1
         assert isinstance(args_list, list)
         assert len(args_list) > 0
 
-        # Process with ArgumentProcessor to test FlagTuple creation
         flags, _positionals = ArgumentProcessor.separate_flags_and_positionals(
             args_list[:-3]
-        )  # Exclude separator and after
+        )
         assert isinstance(flags, list)
         for flag_tuple in flags:
             assert isinstance(flag_tuple, tuple)
             assert len(flag_tuple) == 2
-            assert flag_tuple[0].startswith("-")  # First element should be a flag
-            # Second element should be a value or None
+            assert flag_tuple[0].startswith("-")
 
-        # Test ProfileArgsList - this would be used when merging multiple profiles
         profile_args_list: ProfileArgsList = [
             ["-f", "-W", "1920"],
             ["--borderless", "-H", "1080"],
@@ -282,7 +220,6 @@ export PROTON_ENABLE_FSR=1
         assert isinstance(profile_args_list, list)
         assert all(isinstance(profile_args, list) for profile_args in profile_args_list)
 
-        # Test type compatibility in ProfileManager operations
         merged_args = ProfileManager.merge_multiple_profiles(profile_args_list)
         assert isinstance(merged_args, list)
         assert all(isinstance(arg, str) for arg in merged_args)
@@ -292,7 +229,6 @@ export PROTON_ENABLE_FSR=1
         config_data = "test_profile=-f -W 1920 -H 1080\n"
         config_path = temp_config_with_content(config_data)
 
-        # Use types as they would be in real code
         args: ArgsList = [
             "-p",
             "test_profile",
@@ -302,19 +238,10 @@ export PROTON_ENABLE_FSR=1
             "--",
             "app.exe",
         ]
-        profiles: ProfileArgs = {"test_profile": "-f -W 1920 -H 1080"}
-        config: ConfigData = {"test_profile": "-f -W 1920 -H 1080"}
         exports: EnvExports = {}
         profile_args_list: ProfileArgsList = [["-f", "-W", "1920", "-H", "1080"]]
 
-        # Verify all types have expected structure
         assert isinstance(args, list) and all(isinstance(s, str) for s in args)
-        assert isinstance(profiles, dict) and all(
-            isinstance(k, str) and isinstance(v, str) for k, v in profiles.items()
-        )
-        assert isinstance(config, dict) and all(
-            isinstance(k, str) and isinstance(v, str) for k, v in config.items()
-        )
         assert isinstance(exports, dict) and all(
             isinstance(k, str) and isinstance(v, str) for k, v in exports.items()
         )
@@ -322,7 +249,6 @@ export PROTON_ENABLE_FSR=1
             isinstance(item, list) for item in profile_args_list
         )
 
-        # Run through application to test types in real usage
         app = Application()
         mocker.patch(
             "nscb.config_manager.PathHelper.get_config_path", return_value=config_path

@@ -4,31 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from nscb.application import Application, debug_log, print_help
-
-
-class TestDebugLog:
-    """Test debug logging functionality."""
-
-    def test_debug_log_no_output_when_disabled(self, capsys, monkeypatch):
-        """Test that debug_log doesn't output when NSCB_DEBUG is not set."""
-        monkeypatch.delenv("NSCB_DEBUG", raising=False)
-        debug_log("test message")
-        captured = capsys.readouterr()
-        assert "test message" not in captured.err
-
-    @pytest.mark.parametrize(
-        "debug_value", ["1", "true", "yes", "on", "TRUE", "YES", "ON"]
-    )
-    def test_debug_log_outputs_when_enabled(self, capsys, monkeypatch, debug_value):
-        """Test that debug_log outputs when NSCB_DEBUG is set to truthy values."""
-        monkeypatch.setenv("NSCB_DEBUG", debug_value)
-        test_message = "debug test message"
-        debug_log(test_message)
-        captured = capsys.readouterr()
-        assert f"[DEBUG] {test_message}" in captured.err
+from nscb.application import Application, print_help
 
 
 class TestPrintHelp:
@@ -43,11 +19,17 @@ class TestPrintHelp:
         # Check for key elements in the help message
         assert "neoscopebuddy v" in output
         assert "gamescope wrapper" in output
-        assert "Usage:" in output
-        assert "nscb.pyz -p fullscreen -- /bin/mygame" in output
-        assert "Config file:" in output
-        assert "Config format:" in output
-        assert "Supports NSCB_PRE_CMD" in output
+        assert "USAGE" in output
+        assert "nscb.pyz [--help]" in output
+        assert "CONFIG FILE" in output
+        assert "ENVIRONMENT HOOKS" in output
+        assert "NSCB_PRE_CMD" in output
+        assert "NSCB_POST_CMD" in output
+        assert "NSCB_DEBUG" in output
+        assert "NSCB_DISABLE_LD_PRELOAD_WRAP" in output
+        assert "re-injects LD_PRELOAD" in output
+        assert "Reserved names:" in output
+        assert "NSCB_PRE_CMD" in output  # mentioned in ENVIRONMENT HOOKS section
 
 
 class TestApplicationUnit:
@@ -179,15 +161,11 @@ class TestApplicationUnit:
         mock_profile_manager = mocker.Mock()
 
         # Mock loading a simple config
-        mock_config_result = mocker.MagicMock()
-        mock_config_result.profiles = {"test_profile": "-f -W 1920 -H 1080"}
-        mock_config_result.exports = {}
-        mock_config_result.__contains__ = lambda x: x in mock_config_result.profiles
-        mock_config_result.__getitem__ = lambda x: mock_config_result.profiles.get(
-            x, ""
-        )
-        mock_config_result.get = lambda x, default=None: (
-            mock_config_result.profiles.get(x, default)
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            profiles={"test_profile": ProfileEntry("-f -W 1920 -H 1080")},
+            exports={},
         )
 
         mock_config_manager.load_config.return_value = mock_config_result
@@ -230,15 +208,10 @@ class TestApplicationIntegration:
     def test_application_full_workflow_with_real_components(self, mocker):
         """Test application with real components working together."""
         # Mock the config loading to return a simple config
-        mock_config_result = mocker.MagicMock()
-        mock_config_result.profiles = {"gaming": "-f -W 1920 -H 1080"}
-        mock_config_result.exports = {}
-        mock_config_result.__contains__ = lambda x: x in mock_config_result.profiles
-        mock_config_result.__getitem__ = lambda x: mock_config_result.profiles.get(
-            x, ""
-        )
-        mock_config_result.get = lambda x, default=None: (
-            mock_config_result.profiles.get(x, default)
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {"gaming": ProfileEntry("-f -W 1920 -H 1080")}, {}
         )
 
         # Mock file finding to return a fake path
@@ -533,9 +506,11 @@ class TestApplicationFixtureUtilization:
         )
 
         # Mock the config loading to return a proper ConfigResult
-        from nscb.config_result import ConfigResult
+        from nscb.config_result import ConfigResult, ProfileEntry
 
-        mock_config_result = ConfigResult({"gaming": "-f -W 1920 -H 1080"}, {})
+        mock_config_result = ConfigResult(
+            {"gaming": ProfileEntry("-f -W 1920 -H 1080")}, {}
+        )
         mock_integration_setup["load_config"].return_value = mock_config_result
 
         # Also mock the system detector to prevent actual gamescope execution
@@ -599,7 +574,7 @@ class TestApplicationFixtureUtilization:
         )
 
         # Mock the command executor to simulate different exit scenarios
-        def mock_execution_side_effect(cmd):
+        def mock_execution_side_effect(cmd, extra_env=None):
             if "nonexistent_game" in cmd:
                 # Simulate a failure scenario that triggers sys.exit
                 import sys

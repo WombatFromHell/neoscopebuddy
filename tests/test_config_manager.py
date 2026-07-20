@@ -6,7 +6,7 @@ import pytest
 
 from nscb.application import Application
 from nscb.config_manager import ConfigManager
-from nscb.config_result import ConfigResult
+from nscb.config_result import ProfileEntry
 from nscb.profile_manager import ProfileManager
 
 
@@ -61,7 +61,7 @@ class TestConfigManagerUnit:
         # Verify the config was loaded correctly
         if result:
             assert "gaming" in result.profiles
-            assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
+            assert result.profiles["gaming"].args == "-f -W 1920 -H 1080"
             assert "DISPLAY" in result.exports
             assert result.exports["DISPLAY"] == ":0"
         else:
@@ -85,9 +85,9 @@ class TestConfigManagerUnit:
         result = ConfigManager.load_config(config_path)
 
         assert "gaming" in result.profiles
-        assert result.profiles["gaming"] == "-f -W 1920 -H 1080"
+        assert result.profiles["gaming"].args == "-f -W 1920 -H 1080"
         assert "streaming" in result.profiles
-        assert result.profiles["streaming"] == "--borderless -W 1280 -H 720"
+        assert result.profiles["streaming"].args == "--borderless -W 1280 -H 720"
 
         # Test config with exports
         exports_config = test_config_content["with_exports"]
@@ -127,26 +127,29 @@ class TestConfigManagerUnit:
             (
                 "gaming=-f -W 1920 -H 1080\nstreaming=--borderless -w 1280 -h 720\n",
                 {
-                    "gaming": "-f -W 1920 -H 1080",
-                    "streaming": "--borderless -w 1280 -h 720",
+                    "gaming": ProfileEntry("-f -W 1920 -H 1080"),
+                    "streaming": ProfileEntry("--borderless -w 1280 -h 720"),
                 },
             ),
             (
                 "gaming=\"-f -W 1920 -H 1080\"\nstreaming='--borderless -w 1280 -h 720'\n",
                 {
-                    "gaming": "-f -W 1920 -H 1080",
-                    "streaming": "--borderless -w 1280 -h 720",
+                    "gaming": ProfileEntry("-f -W 1920 -H 1080"),
+                    "streaming": ProfileEntry("--borderless -w 1280 -h 720"),
                 },
             ),
             (
                 "# This is a comment\n\ngaming=-f -W 1920 -H 1080\n# Another comment\n\nstreaming=--borderless\n",
-                {"gaming": "-f -W 1920 -H 1080", "streaming": "--borderless"},
+                {
+                    "gaming": ProfileEntry("-f -W 1920 -H 1080"),
+                    "streaming": ProfileEntry("--borderless"),
+                },
             ),
             (
                 'gaming="-f -W 1920 -H 1080"\nspecial="test \'nested quotes\' here"\n',
                 {
-                    "gaming": "-f -W 1920 -H 1080",
-                    "special": "test 'nested quotes' here",
+                    "gaming": ProfileEntry("-f -W 1920 -H 1080"),
+                    "special": ProfileEntry("test 'nested quotes' here"),
                 },
             ),
             ("", {}),
@@ -171,7 +174,7 @@ class TestConfigManagerUnit:
             f.write("multiple_equals=value=another_value\n")
 
         result = ConfigManager.load_config(temp_config_file2)
-        expected = {"multiple_equals": "value=another_value"}
+        expected = {"multiple_equals": ProfileEntry("value=another_value")}
         assert result.profiles == expected
 
     def test_load_config_file_reading_errors(self):
@@ -192,25 +195,28 @@ class TestConfigManagerUnit:
             # Basic export functionality
             (
                 "export SOME_VAR=value\ngaming=-f",
-                {"gaming": "-f"},
+                {"gaming": ProfileEntry("-f")},
                 {"SOME_VAR": "value"},
             ),
             # Multiple exports
             (
                 "export VAR1=value1\nexport VAR2=value2\ngaming=-f",
-                {"gaming": "-f"},
+                {"gaming": ProfileEntry("-f")},
                 {"VAR1": "value1", "VAR2": "value2"},
             ),
             # Export with quotes
             (
                 'export QUOTED_VAR="quoted value here"\nstreaming=--borderless',
-                {"streaming": "--borderless"},
+                {"streaming": ProfileEntry("--borderless")},
                 {"QUOTED_VAR": "quoted value here"},
             ),
             # Mixed profiles and exports
             (
                 "gaming=-f -W 1920\nexport DISPLAY=:0\nstreaming=--borderless\nexport WAYLAND_DISPLAY=wayland-0",
-                {"gaming": "-f -W 1920", "streaming": "--borderless"},
+                {
+                    "gaming": ProfileEntry("-f -W 1920"),
+                    "streaming": ProfileEntry("--borderless"),
+                },
                 {"DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0"},
             ),
             # Export only config (no profiles)
@@ -222,7 +228,10 @@ class TestConfigManagerUnit:
             # Profile only config (no exports)
             (
                 "gaming=-f\nstreaming=--borderless",
-                {"gaming": "-f", "streaming": "--borderless"},
+                {
+                    "gaming": ProfileEntry("-f"),
+                    "streaming": ProfileEntry("--borderless"),
+                },
                 {},
             ),
             # Empty config with exports
@@ -294,12 +303,7 @@ class TestConfigManagerSecurity:
             "invalid/name",  # Contains slash
             "help",  # Reserved name (case insensitive)
             "HELP",  # Reserved name (case insensitive)
-            "debug",  # Reserved name
-            "DEBUG",  # Reserved name
-            "test",  # Reserved name
-            "config",  # Reserved name
             "export",  # Reserved name
-            "env",  # Reserved name
         ]
 
         for invalid_name in invalid_names:
@@ -331,25 +335,6 @@ class TestConfigManagerSecurity:
 
         assert "Invalid file encoding" in str(exc_info.value)
 
-    def test_command_injection_detection(self, temp_config_file):
-        """Test detection of command injection attempts."""
-        dangerous_values = [
-            "value; rm -rf /",
-            "value && echo hacked",
-            "value || exit 1",
-            "value `whoami`",
-            "value $(whoami)",
-            "value ${HOME}",
-        ]
-
-        for dangerous_value in dangerous_values:
-            with open(temp_config_file, "w") as f:
-                f.write(f"profile={dangerous_value}\n")
-
-            # Command injection attempts should be skipped gracefully
-            result = ConfigManager.load_config(temp_config_file)
-            assert result.profiles == {}  # Invalid entries are skipped
-
     def test_reserved_env_var_names(self, temp_config_file):
         """Test that reserved environment variable names are rejected."""
         reserved_vars = ["PATH", "HOME", "USER", "SHELL", "LD_PRELOAD"]
@@ -365,7 +350,7 @@ class TestConfigManagerSecurity:
 
     def test_reserved_profile_names(self, temp_config_file):
         """Test that reserved profile names are rejected."""
-        reserved_profiles = ["help", "debug", "test", "config", "export", "env"]
+        reserved_profiles = ["help", "export"]
 
         for profile_name in reserved_profiles:
             with open(temp_config_file, "w") as f:
@@ -420,52 +405,6 @@ class TestConfigManagerSecurity:
             ConfigManager.load_config(temp_config_file)
 
 
-class TestConfigResultUnit:
-    """Unit tests for the ConfigResult container."""
-
-    def test_config_result_initialization(self):
-        profiles = {"gaming": "-f -W 1920"}
-        exports = {"VAR": "value"}
-        result = ConfigResult(profiles, exports)
-        assert result.profiles == profiles
-        assert result.exports == exports
-
-    def test_config_result_contains_method(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert "gaming" in result
-        assert "nonexistent" not in result
-
-    def test_config_result_getitem_method(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert result["gaming"] == "-f -W 1920"
-
-    def test_config_result_get_method(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert result.get("gaming") == "-f -W 1920"
-        assert result.get("nonexistent") is None
-        assert result.get("nonexistent", "default") == "default"
-
-    def test_config_result_keys_values_items(self):
-        profiles = {"gaming": "-f -W 1920", "streaming": "--borderless -W 1280"}
-        result = ConfigResult(profiles, {})
-
-        assert set(result.keys()) == {"gaming", "streaming"}
-        assert set(result.values()) == {"-f -W 1920", "--borderless -W 1280"}
-        assert set(result.items()) == {
-            ("gaming", "-f -W 1920"),
-            ("streaming", "--borderless -W 1280"),
-        }
-
-    def test_config_result_equality_with_dict(self):
-        profiles = {"gaming": "-f -W 1920"}
-        result = ConfigResult(profiles, {})
-        assert result == profiles
-        assert result != {"different": "content"}
-
-
 class TestConfigManagerIntegration:
     """Integration tests for ConfigManager with other modules."""
 
@@ -484,7 +423,7 @@ class TestConfigManagerIntegration:
         # Test the config manager loading the config
         config = ConfigManager.load_config(config_path)
         assert "performance" in config.profiles
-        assert config.profiles["performance"] == "-f -W 2560 -H 1440 --mangoapp"
+        assert config.profiles["performance"].args == "-f -W 2560 -H 1440 --mangoapp"
 
         # Now test with real ProfileManager
         profiles, _remaining_args = ProfileManager.parse_profile_args(
@@ -565,11 +504,11 @@ gaming=--borderless -W 1920 -H 1080
             config = ConfigManager.load_config(Path(temp_config_path))
 
             assert "performance" in config.profiles
-            assert config.profiles["performance"] == "-f -W 2560 -H 1440"
+            assert config.profiles["performance"].args == "-f -W 2560 -H 1440"
             assert "gaming" in config.profiles
-            assert config.profiles["gaming"] == "--borderless -W 1920 -H 1080"
+            assert config.profiles["gaming"].args == "--borderless -W 1920 -H 1080"
             assert "empty_profile" in config.profiles
-            assert config.profiles["empty_profile"] == ""
+            assert config.profiles["empty_profile"].args == ""
 
             compat_key_found = (
                 "compatibility" in config.profiles
@@ -582,7 +521,7 @@ gaming=--borderless -W 1920 -H 1080
                 if "compatibility" in config.profiles
                 else '"compatibility"'
             )
-            assert config.profiles[compat_key] == "-W 1280 -H 720"
+            assert config.profiles[compat_key].args == "-W 1280 -H 720"
         finally:
             os.unlink(temp_config_path)
 
@@ -623,3 +562,61 @@ gaming=--borderless -W 1920 -H 1080
         assert "-f" in called_cmd
         assert "3200" in called_cmd
         assert "--mangoapp" in called_cmd
+
+
+class TestConfigManagerSections:
+    """Tests for [section]-based config format."""
+
+    def test_section_only(self, temp_config_with_content):
+        content = "[gaming]\n-f -W 1920 -H 1080\nexport MANGOHUD=1\n\n[quiet]\n-b\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["gaming"].args == "-f -W 1920 -H 1080"
+        assert result.profiles["gaming"].exports == {"MANGOHUD": "1"}
+        assert result.profiles["quiet"].args == "-b"
+        assert result.profiles["quiet"].exports == {}
+        assert result.exports == {}
+
+    def test_global_only_no_sections(self, temp_config_with_content):
+        content = "export MANGOHUD=1\ngaming=-f\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["gaming"].args == "-f"
+        assert result.exports == {"MANGOHUD": "1"}
+        assert result.profiles["gaming"].exports == {}
+
+    def test_mixed_sections_and_legacy(self, temp_config_with_content):
+        content = "export GLOBAL=1\nlegacy=-f\n\n[gaming]\n-W 1920\nexport FSR=5\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["legacy"].args == "-f"
+        assert result.profiles["legacy"].exports == {}
+        assert result.profiles["gaming"].args == "-W 1920"
+        assert result.profiles["gaming"].exports == {"FSR": "5"}
+        assert result.exports == {"GLOBAL": "1"}
+
+    def test_export_scoping_global_vs_profile(self, temp_config_with_content):
+        content = "export MANGOHUD=1\n\n[gaming]\n-f\nexport MANGOHUD=0\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.exports == {"MANGOHUD": "1"}
+        assert result.profiles["gaming"].exports == {"MANGOHUD": "0"}
+
+    def test_multi_profile_export_merge(self, temp_config_with_content):
+        content = "export GLOBAL=1\n\n[gaming]\n-f\nexport FSR=5\n\n[streaming]\n-b\nexport FSR=3\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        # Last-wins when both selected: streaming's FSR=3 overwrites gaming's FSR=5
+        assert result.profiles["gaming"].exports == {"FSR": "5"}
+        assert result.profiles["streaming"].exports == {"FSR": "3"}
+
+    def test_duplicate_section_merges(self, temp_config_with_content):
+        content = "[gaming]\n-f\nexport A=1\n\n[gaming]\n-W 1920\nexport B=2\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["gaming"].args == "-W 1920"
+        assert result.profiles["gaming"].exports == {"A": "1", "B": "2"}
+
+    def test_invalid_section_name(self, temp_config_with_content):
+        content = "[help]\n-f\n"
+        with pytest.raises(Exception, match="Invalid profile name"):
+            ConfigManager.load_config(temp_config_with_content(content))
+
+    def test_section_with_quotes_in_name(self, temp_config_with_content):
+        content = '["my-profile"]\n-f\n'
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["my-profile"].args == "-f"

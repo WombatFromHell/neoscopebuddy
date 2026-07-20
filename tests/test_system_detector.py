@@ -1,7 +1,6 @@
 """Tests for the system detection functionality in NeoscopeBuddy."""
 
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -13,42 +12,25 @@ class TestSystemDetectorUnit:
     """Unit tests for the SystemDetector class."""
 
     def test_find_executable_true(self, mocker):
-        mocker.patch.dict("os.environ", {"PATH": "/usr/bin:/bin"})
-        mocker.patch.object(Path, "exists", return_value=True)
-        mocker.patch.object(Path, "is_dir", return_value=True)
-        mocker.patch.object(Path, "is_file", return_value=True)
-        mocker.patch("os.access", return_value=True)
-
+        mocker.patch("shutil.which", return_value="/usr/bin/gamescope")
         assert SystemDetector.find_executable("gamescope") is True
 
     def test_find_executable_false(self, mocker):
-        mocker.patch.dict("os.environ", {"PATH": ""}, clear=True)
+        mocker.patch("shutil.which", return_value=None)
         assert SystemDetector.find_executable("gamescope") is False
 
     def test_find_executable_permission_issues(self, mocker):
-        mocker.patch.dict("os.environ", {"PATH": "/usr/bin"})
-        mocker.patch.object(Path, "exists", return_value=True)
-        mocker.patch.object(Path, "is_dir", return_value=True)
-        mocker.patch.object(Path, "is_file", return_value=True)
-        mocker.patch("os.access", return_value=False)
+        mocker.patch("shutil.which", return_value=None)
         assert SystemDetector.find_executable("gamescope") is False
 
     def test_find_executable_empty_path(self, mocker):
-        mocker.patch("os.environ.get", return_value="")
+        mocker.patch("shutil.which", return_value=None)
         assert SystemDetector.find_executable("any_executable") is False
 
     def test_find_executable_path_scenarios(self, mocker):
-        import shutil
-
-        python_path = shutil.which("python")
-        if python_path:
-            mocker.patch.dict("os.environ", {"PATH": str(Path(python_path).parent)})
-            mocker.patch.object(Path, "exists", return_value=True)
-            mocker.patch.object(Path, "is_dir", return_value=True)
-            mocker.patch.object(Path, "is_file", return_value=True)
-            mocker.patch("os.access", return_value=True)
-            result = SystemDetector.find_executable("python")
-            assert result is True
+        mocker.patch("shutil.which", return_value="/usr/bin/python")
+        result = SystemDetector.find_executable("python")
+        assert result is True
 
     def test_is_gamescope_active_xdg_method(self, mocker):
         mocker.patch.dict("os.environ", {"XDG_CURRENT_DESKTOP": "gamescope"})
@@ -74,25 +56,15 @@ class TestSystemDetectorUnit:
         assert SystemDetector.is_gamescope_active() is False
 
     @pytest.mark.parametrize(
-        "path_env,access_result,exists_result,expected",
+        "which_result,expected",
         [
-            ("/usr/bin:/bin", True, True, True),  # Standard PATH with access
-            ("", False, False, False),  # Empty PATH
-            ("/nonexistent", False, False, False),  # Non-existent path
-            ("/usr/bin", True, True, True),  # Valid path with access
-            ("/usr/bin", False, True, False),  # Path exists but no access
+            ("/usr/bin/test_executable", True),
+            (None, False),
         ],
     )
-    def test_find_executable_parametrized(
-        self, mocker, path_env, access_result, exists_result, expected
-    ):
-        """Test find_executable with different PATH environments using parametrization."""
-        mocker.patch.dict("os.environ", {"PATH": path_env}, clear=True)
-        if path_env:
-            mocker.patch.object(Path, "exists", return_value=exists_result)
-            mocker.patch.object(Path, "is_dir", return_value=True)
-            mocker.patch.object(Path, "is_file", return_value=exists_result)
-            mocker.patch("os.access", return_value=access_result)
+    def test_find_executable_parametrized(self, mocker, which_result, expected):
+        """Test find_executable using shutil.which."""
+        mocker.patch("shutil.which", return_value=which_result)
 
         result = SystemDetector.find_executable("test_executable")
         assert result == expected
@@ -204,25 +176,15 @@ class TestSystemDetectorEndToEnd:
     def test_find_executable_comprehensive_scenarios(self, mocker):
         # Test various executable finding scenarios
         test_cases = [
-            # (path_env, expected_result)
-            ("/usr/bin:/bin", True),  # Standard PATH with common directories
-            ("", False),  # Empty PATH
-            ("/nonexistent", False),  # Non-existent path
+            # (which_result, expected_result)
+            ("/usr/bin/dummy_executable", True),
+            (None, False),
         ]
 
-        for path_env, expected_result in test_cases:
-            mocker.patch.dict("os.environ", {"PATH": path_env}, clear=True)
-            # Mock file system operations for the test
-            if path_env:
-                mocker.patch.object(Path, "exists", return_value=True)
-                mocker.patch.object(Path, "is_dir", return_value=True)
-                mocker.patch.object(Path, "is_file", return_value=True)
-                mocker.patch("os.access", return_value=True)
-
-            # Test with a dummy executable name
+        for which_result, expected_result in test_cases:
+            mocker.patch("shutil.which", return_value=which_result)
             result = SystemDetector.find_executable("dummy_executable")
-            # The result depends on the mocking but the call should not fail
-            assert result in [True, False]
+            assert result == expected_result
 
     def test_gamescope_detection_integration_e2e(
         self, mocker, temp_config_with_content

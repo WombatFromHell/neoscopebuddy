@@ -3,10 +3,10 @@
 import re
 from pathlib import Path
 
-from .config_result import ConfigResult
+from .config_result import ConfigResult, ProfileEntry
 from .exceptions import InvalidConfigError
 from .path_helper import PathHelper
-from .types import ConfigData, EnvExports
+from .types import EnvExports
 
 
 class ConfigManager:
@@ -22,6 +22,9 @@ class ConfigManager:
         """
         Load configuration from file including both profiles and environment exports.
 
+        Supports optional [profile] section headers. Lines before any section
+        are global; lines inside a section are scoped to that profile.
+
         Args:
             config_file: Path to the configuration file
 
@@ -33,15 +36,14 @@ class ConfigManager:
 
         Security:
             - Validates profile names and variable names
-            - Sanitizes input to prevent injection
             - Strips quotes from values safely
         """
-        profiles: ConfigData = {}
+        profiles: dict[str, ProfileEntry] = {}
         exports: EnvExports = {}
+        current: str | None = None
 
-        # Validate that we're reading a reasonable file size to prevent DoS
         file_size = config_file.stat().st_size
-        if file_size > 10 * 1024 * 1024:  # 10MB limit
+        if file_size > 10 * 1024 * 1024:
             raise InvalidConfigError(
                 str(config_file), message=f"Config file too large ({file_size} bytes)"
             )
@@ -49,62 +51,56 @@ class ConfigManager:
         try:
             with open(config_file, "r", encoding="utf-8") as f:
                 for line_num, line in enumerate(f, 1):
-                    ConfigManager._process_config_line(
-                        line, line_num, str(config_file), profiles, exports
-                    )
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if len(line) > 10000:
+                        raise InvalidConfigError(
+                            str(config_file),
+                            line_num,
+                            f"Line too long ({len(line)} characters)",
+                        )
+
+                    if m := re.fullmatch(r"\[([^\]]+)\]", line):
+                        name = ConfigManager._strip_quotes_from_key(m.group(1).strip())
+                        if not ConfigManager._is_valid_profile_name(name):
+                            raise InvalidConfigError(
+                                str(config_file),
+                                line_num,
+                                f"Invalid profile name: '{name}'",
+                            )
+                        profiles.setdefault(name, ProfileEntry(args=""))
+                        current = name
+                        continue
+
+                    if line.startswith("export "):
+                        target = profiles[current].exports if current else exports
+                        ConfigManager._process_export_line(
+                            line, line_num, str(config_file), target
+                        )
+                        continue
+
+                    if current:
+                        profiles[current].args = ConfigManager._sanitize_config_value(
+                            line
+                        )
+                    elif "=" in line:
+                        ConfigManager._process_profile_line(
+                            line, line_num, str(config_file), profiles
+                        )
 
         except UnicodeDecodeError as e:
             raise InvalidConfigError(
                 str(config_file), message=f"Invalid file encoding: {e}"
             ) from e
+        except InvalidConfigError:
+            raise
         except Exception as e:
             raise InvalidConfigError(
                 str(config_file), message=f"Failed to parse config: {e}"
             ) from e
 
         return ConfigResult(profiles, exports)
-
-    @staticmethod
-    def _process_config_line(
-        line: str,
-        line_num: int,
-        config_file: str,
-        profiles: ConfigData,
-        exports: EnvExports,
-    ) -> None:
-        """
-        Process a single configuration line.
-
-        Args:
-            line: The configuration line to process
-            line_num: Line number for error reporting
-            config_file: Config file path for error reporting
-            profiles: Dictionary to store profile configurations
-            exports: Dictionary to store environment exports
-        """
-        # Skip empty lines and comments
-        if not line.strip() or line.startswith("#"):
-            return
-
-        # Handle lines without equals signs gracefully
-        if "=" not in line:
-            return
-
-        # Security: Validate line length to prevent excessively long lines
-        if len(line) > 10000:  # 10KB line limit
-            raise InvalidConfigError(
-                config_file,
-                line_num,
-                f"Line too long ({len(line)} characters)",
-            )
-
-        line = line.strip()
-
-        # Route to appropriate handler based on line type
-        if line.startswith("export "):
-            ConfigManager._process_export_line(line, line_num, config_file, exports)
-        else:
-            ConfigManager._process_profile_line(line, line_num, config_file, profiles)
 
     @staticmethod
     def _process_export_line(
@@ -135,23 +131,18 @@ class ConfigManager:
                 f"Invalid environment variable name: '{key}'",
             )
 
-        # Security: Sanitize value
-        try:
-            value = ConfigManager._sanitize_config_value(value.strip())
-            exports[key] = value
-        except InvalidConfigError:
-            # Skip malformed values instead of failing completely
-            pass
+        value = ConfigManager._sanitize_config_value(value.strip())
+        exports[key] = value
 
     @staticmethod
     def _process_profile_line(
-        line: str, line_num: int, config_file: str, profiles: ConfigData
+        line: str, line_num: int, config_file: str, profiles: dict[str, ProfileEntry]
     ) -> None:
         """
-        Process a profile configuration line.
+        Process a legacy name=args profile line.
 
         Args:
-            line: The profile line to process
+            line: The configuration line to process
             line_num: Line number for error reporting
             config_file: Config file path for error reporting
             profiles: Dictionary to store profile configurations
@@ -187,7 +178,11 @@ class ConfigManager:
 
     @staticmethod
     def _validate_and_store_profile(
-        key: str, value: str, line_num: int, config_file: str, profiles: ConfigData
+        key: str,
+        value: str,
+        line_num: int,
+        config_file: str,
+        profiles: dict[str, ProfileEntry],
     ) -> None:
         """Validate profile name and store if valid."""
         # Security: Validate profile name (allow empty keys for backward compatibility)
@@ -202,16 +197,12 @@ class ConfigManager:
 
     @staticmethod
     def _sanitize_and_store_profile_value(
-        key: str, value: str, profiles: ConfigData
+        key: str, value: str, profiles: dict[str, ProfileEntry]
     ) -> None:
         """Sanitize value and store in profiles if valid."""
-        try:
-            sanitized_value = ConfigManager._sanitize_config_value(value)
-            if key:  # Only add to profiles if key is not empty
-                profiles[key] = sanitized_value
-        except InvalidConfigError:
-            # Skip malformed values instead of failing completely
-            pass
+        sanitized_value = ConfigManager._sanitize_config_value(value)
+        if key:
+            profiles[key] = ProfileEntry(args=sanitized_value)
 
     @staticmethod
     def _is_valid_env_var_name(name: str) -> bool:
@@ -241,8 +232,8 @@ class ConfigManager:
             return False
 
         # Prevent reserved variable names
-        reserved_names = ["PATH", "HOME", "USER", "SHELL", "LD_PRELOAD", "NSCB_"]
-        if any(name.startswith(reserved) for reserved in reserved_names):
+        exact_reserved = {"PATH", "HOME", "USER", "SHELL", "LD_PRELOAD"}
+        if name in exact_reserved or name.startswith("NSCB_"):
             return False
 
         return True
@@ -271,7 +262,7 @@ class ConfigManager:
             return False
 
         # Prevent reserved profile names
-        reserved_names = ["help", "debug", "test", "config", "export", "env"]
+        reserved_names = ["help", "export"]
         if name.lower() in reserved_names:
             return False
 
@@ -280,7 +271,7 @@ class ConfigManager:
     @staticmethod
     def _sanitize_config_value(value: str) -> str:
         """
-        Sanitize configuration values for security.
+        Sanitize configuration values.
 
         Args:
             value: Configuration value to sanitize
@@ -289,15 +280,13 @@ class ConfigManager:
             Sanitized value
 
         Security:
-            - Strips quotes safely
-            - Prevents command injection attempts
+            - Strips matching quotes from values
             - Handles edge cases
         """
         if not value:
             return value
 
         value = ConfigManager._strip_quotes_from_value(value)
-        ConfigManager._check_for_command_injection(value)
         return value
 
     @staticmethod
@@ -313,14 +302,3 @@ class ConfigManager:
         return (value.startswith('"') and value.endswith('"')) or (
             value.startswith("'") and value.endswith("'")
         )
-
-    @staticmethod
-    def _check_for_command_injection(value: str) -> None:
-        """Check for and prevent command injection attempts."""
-        dangerous_patterns = [";", "&&", "||", "`", "$(", "${"]
-        for pattern in dangerous_patterns:
-            if pattern in value:
-                raise InvalidConfigError(
-                    "config",
-                    message=f"Potential command injection detected in value: '{value}'",
-                )
