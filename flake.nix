@@ -89,10 +89,9 @@
           findutils
           gnused
           zip
-          py
+          python3
+          uv
         ];
-
-        PYTHON = "${py}/bin/python3";
 
         buildPhase = ''
           mkdir -p staging
