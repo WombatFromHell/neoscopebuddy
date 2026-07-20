@@ -35,9 +35,6 @@
       then builtins.head match
       else throw "Version not found in pyproject.toml";
 
-    # Use epoch 1 for maximum determinism (Jan 1, 1970)
-    epoch = 1;
-
     forAllSystems = nixpkgs.lib.genAttrs ["x86_64-linux" "aarch64-linux"];
 
     # Read Python version from .python-version
@@ -68,8 +65,6 @@
     mkZipapp = system: let
       pkgs = mkPkgs system;
       py = python pkgs;
-      pythonSet = mkPythonSet system;
-      venv = pythonSet.mkVirtualEnv "nscb-env" [];
 
       # Step A: Prepare source with version injection
       src = pkgs.stdenvNoCC.mkDerivation {
@@ -108,7 +103,7 @@
 
           # Normalize permissions and timestamps for determinism
           chmod -R u+w staging
-          find staging -exec touch -d "@${builtins.toString epoch}" {} +
+          find staging -exec touch -d "@1" {} +
 
           # Build deterministic zip: sorted file list, no extra attributes (-X)
           (cd staging && find . \( -type d -o -type f \) | LC_ALL=C sort | zip -X -q -@ archive.zip)
