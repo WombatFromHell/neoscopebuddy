@@ -1,67 +1,79 @@
-# NeoScopebuddy [![Coverage Status](./coverage-badge.svg?dummy=8484744)]()
+# NeoScopebuddy
 
 NeoScopebuddy is a thin wrapper around the gamescope utility, just like its competitor scopebuddy, except it supports a critical extra feature: profiles!
 
-Profiles are defined in `$HOME/.config/nscb.conf` using simple `KEY=VALUE` lines, and called via `-p <name>` or `--profile <name>`.
-The config file also supports exporting environment variables using `export VAR_NAME=value` syntax:
+## Usage
+
+```bash
+nscb.pyz [-p profile[,...]] [--profile=profile[,...]]
+         [--profiles=profile[,...]] [gamescope flags] [-- app...]
+```
+
+If `--` is present, everything after it is passed to the application. Gamescope flags before `--` override matching profile flags.
+
+## Profiles
+
+```bash
+nscb.pyz -p gaming -- /usr/bin/mygame              # single profile
+nscb.pyz -p gaming -W 2560 -H 1440 -- /usr/bin/mygame  # profile + overrides
+nscb.pyz -p gaming -p quiet -- /usr/bin/mygame     # multiple profiles
+nscb.pyz --profiles=gaming,quiet -- /usr/bin/mygame     # comma-separated
+```
+
+Reserved profile names: `help`, `export`.
+
+## Configuration File
+
+Path: `$XDG_CONFIG_HOME/nscb.conf` or `~/.config/nscb.conf`
+
+Sections group args and exports per profile:
 
 ```ini
-# Profile definitions
-someapp=-f -W 1280 -H 720
-someotherapp=-b -W 1920 -H 1080
+[gaming]
+-f -W 1920 -H 1080
+export MANGOHUD=1
 
-# Environment variable exports
-export PROTON_ENABLE_FSR4=1
+[quiet]
+-b
+
+# Global exports (before any section) always apply:
+export DISPLAY=:0
+```
+
+Legacy flat syntax still works:
+
+```ini
+gaming=-f -W 1920 -H 1080
 export MANGOHUD=1
 ```
 
-## Example usage
-
-```bash
-nscb.py -p someapp -- /usr/bin/someapp
-```
-
-Profiles can also be used with pass-through arguments and the arguments will override the profile:
-
-```bash
-nscb.py -p someapp -W 3840 -H 2160 --hdr-enabled -- /usr/bin/someapp
-```
-
-Alternatively, multiple profiles can be chained together and the last one will overwrite conflicting exclusive arguments from the others:
-
-```bash
-nscb.py -p someapp -p someotherapp -- /usr/bin/someapp
-```
-
-You can also use the syntax `--profiles=profile1,profile2` to chain multiple profiles:
-
-```bash
-nscb.py --profiles=profile1,profile2 -- /usr/bin/someapp
-```
-
-## Direct pass-through
-
-If no profile is specified, arguments are passed through to `gamescope` as-is:
-
-```bash
-nscb.py -f -W 1280 -H 720 -- /usr/bin/someapp
-```
-
-Is the same as:
-
-```bash
-gamescope -f -W 1280 -H 720 -- /usr/bin/someapp
-```
-
-## Configuration File Variables
-
-In addition to profiles, you can define environment variables in your config file:
-
-- `export VAR_NAME=value`: Sets environment variables that will be available to the application
+Lines starting with `#` are comments. Quoted values have quotes stripped.
 
 ## Environment Variables
 
-- `NSCB_PRE_CMD`/`NSCB_PRECMD`: Command to run before gamescope/app execution
-- `NSCB_POST_CMD`/`NSCB_POSTCMD`: Command to run after gamescope/app execution
-- `NSCB_DISABLE_LD_PRELOAD_WRAP`: When set to a truthy value ("1", "true", "yes", "on"), this environment variable disables the LD_PRELOAD wrapping functionality
-- `FAUGUS_LOG`: When this environment variable is set (indicating launch via faugus-launcher), LD_PRELOAD wrapping is automatically disabled without requiring the NSCB_DISABLE_LD_PRELOAD_WRAP override
+| Variable                         | Description                                                |
+| -------------------------------- | ---------------------------------------------------------- |
+| `NSCB_PRE_CMD`                   | Command to run before gamescope                            |
+| `NSCB_POST_CMD`                  | Command to run after gamescope exits                       |
+| `NSCB_DEBUG=1`                   | Enable debug logging to stderr                             |
+| `NSCB_DISABLE_LD_PRELOAD_WRAP=1` | Skip preserving LD_PRELOAD to child process                |
+| `FAUGUS_LOG`                     | Auto-disables LD_PRELOAD wrapping (set by faugus-launcher) |
+
+Legacy names `NSCB_PRECMD` and `NSCB_POSTCMD` also work.
+
+## Direct Pass-Through
+
+Without a profile, arguments pass through to gamescope as-is:
+
+```bash
+nscb.pyz -f -W 1280 -H 720 -- /usr/bin/mygame
+# equivalent to: gamescope -f -W 1280 -H 720 -- /usr/bin/mygame
+```
+
+## Building
+
+```bash
+make build       # local deterministic build → dist/nscb.pyz
+make build-nix   # reproducible Nix build
+make install     # install to ~/.local/bin with nscb symlink
+```
