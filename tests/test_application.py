@@ -768,6 +768,10 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
+        )
+        mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
             return_value=False,
         )
@@ -802,6 +806,10 @@ class TestApplicationCondition:
         mocker.patch(
             "nscb.config_manager.ConfigManager.load_config",
             return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
         )
         mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
@@ -840,6 +848,10 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
+        )
+        mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
             return_value=True,
         )
@@ -873,6 +885,10 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
+        )
+        mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
             return_value=False,
         )
@@ -903,6 +919,10 @@ class TestApplicationCondition:
         mocker.patch(
             "nscb.config_manager.ConfigManager.load_config",
             return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
         )
         mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
@@ -938,6 +958,10 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
+        )
+        mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
             return_value=False,
         )
@@ -953,7 +977,7 @@ class TestApplicationCondition:
         app = Application()
         app.run(["-p", "base,override", "--", "mygame"])
 
-        # override's gamescope_condition=1 -eq 0 wins → bare exec
+        # override's gamescope_condition wins → bare exec
         mock_bare.assert_called_once()
 
     def test_condition_xdg_desktop_match(self, mocker, monkeypatch):
@@ -965,7 +989,7 @@ class TestApplicationCondition:
             {
                 "gaming": ProfileEntry(
                     "-f -W 1920",
-                    gamescope_condition='"$XDG_CURRENT_DESKTOP" = "niri"',
+                    gamescope_condition="env:XDG_CURRENT_DESKTOP=niri",
                 )
             },
             {},
@@ -977,6 +1001,10 @@ class TestApplicationCondition:
         mocker.patch(
             "nscb.config_manager.ConfigManager.load_config",
             return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
         )
         mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
@@ -999,7 +1027,7 @@ class TestApplicationCondition:
         assert "gamescope" in call_args
 
     def test_condition_xdg_desktop_no_match(self, mocker, monkeypatch):
-        """Real sh evaluation: condition does not match XDG_CURRENT_DESKTOP."""
+        """Condition false → bare exec path taken."""
         from nscb.config_result import ConfigResult, ProfileEntry
 
         monkeypatch.setenv("XDG_CURRENT_DESKTOP", "gnome")
@@ -1007,7 +1035,7 @@ class TestApplicationCondition:
             {
                 "gaming": ProfileEntry(
                     "-f -W 1920",
-                    gamescope_condition='"$XDG_CURRENT_DESKTOP" = "niri"',
+                    gamescope_condition="env:XDG_CURRENT_DESKTOP=niri",
                 )
             },
             {},
@@ -1021,7 +1049,15 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
+        )
+        mocker.patch(
             "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.evaluate_condition",
             return_value=False,
         )
         mocker.patch(
