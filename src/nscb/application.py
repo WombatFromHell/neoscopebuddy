@@ -21,7 +21,6 @@ def print_help() -> None:
     print(
         f"""\
 neoscopebuddy v{__version__} – gamescope wrapper
-
 USAGE
   nscb.pyz [--help]
   nscb.pyz [-p profile[,...]] [--profile=profile[,...]]
@@ -34,38 +33,54 @@ PROFILES
   -p, --profile       Select one or more comma-separated profiles
   --profiles=         Same as --profile (alternative spelling)
   Reserved names: help, export
-
   Profile overrides:
     nscb.pyz -p gaming -W 2560 -H 1440 -- /bin/mygame
 
 CONFIG FILE
   Path: $XDG_CONFIG_HOME/nscb.conf  or  ~/.config/nscb.conf
   Lines starting with # are comments.
-
   Sections group args and exports per profile:
+
     [gaming]
     -f -W 1920 -H 1080
     export MANGOHUD=1
-
     [quiet]
     -b
 
   Global exports (before any section) always apply:
     export DISPLAY=:0
 
-  Legacy flat syntax still works:
+  Legacy flat syntax also works:
     gaming=-f -W 1920 -H 1080
     export MANGOHUD=1
 
+  gamescope_condition=<predicate>
+    Checked before launching. If it evaluates false, the app runs
+    directly without gamescope — pre/post hooks still apply on the
+    fallback path.
+
+    Supported predicates:
+      env:VAR=value   true if the environment variable VAR equals value
+      env:VAR         true if VAR is set to any non-empty value
+      cmd:name        true if `name` is found on PATH
+      file:/path      true if the given path exists
+
+    [gaming]
+    gamescope_condition=env:XDG_CURRENT_DESKTOP=niri
+    -f -W 1920 -H 1080
+
+    No shell is invoked; unrecognized predicate forms fail closed
+    (treated as false) rather than erroring.
+    If multiple selected profiles define gamescope_condition, last wins.
+
 ENVIRONMENT HOOKS (optional)
-  NSCB_PRE_CMD=command      Run before gamescope
-  NSCB_POST_CMD=command     Run after gamescope exits
-  NSCB_DEBUG=1              Enable debug logging to stderr
-  NSCB_DISABLE_LD_PRELOAD_WRAP=1
-                            Skip preserving LD_PRELOAD to child process
-                            (by default, nscb re-injects LD_PRELOAD after
-                            gamescope strips it; set this to disable)
-  (Legacy names: NSCB_PRECMD, NSCB_POSTCMD)"""
+  NSCB_PRE_CMD=command              Run before gamescope
+  NSCB_POST_CMD=command             Run after gamescope exits
+  NSCB_DEBUG=1                      Enable debug logging to stderr
+  NSCB_DISABLE_LD_PRELOAD_WRAP=1    Skip preserving LD_PRELOAD to child process 
+                                    (by default, nscb re-injects LD_PRELOAD after
+                                    gamescope strips it; set this to disable
+        """
     )
 
 
@@ -102,21 +117,30 @@ class Application:
         # Process profiles if any
         if profiles:
             try:
-                final_args, exports = self._process_profiles(profiles, remaining_args)
+                final_args, exports, gamescope_condition = self._process_profiles(
+                    profiles, remaining_args
+                )
             except NscbError as e:
                 logging.error(str(e))
                 return 1
         else:
             final_args = remaining_args
             exports = {}
+            gamescope_condition = None
+
+        # gamescope_condition only applies to the initial launch decision —
+        # once gamescope is active we're already committed to running inside it
+        if gamescope_condition is not None and not SystemDetector.is_gamescope_active():
+            if not self.command_executor.evaluate_condition(gamescope_condition):
+                return self.command_executor.execute_bare(final_args, exports)
 
         # Execute the command
         return self.command_executor.execute_gamescope_command(final_args, exports)
 
     def _process_profiles(
         self, profiles: ArgsList, args: ArgsList
-    ) -> tuple[ArgsList, EnvExports]:
-        """Process profiles and merge with arguments, returning both arguments and exports."""
+    ) -> tuple[ArgsList, EnvExports, str | None]:
+        """Process profiles and merge with arguments, returning args, exports, and gamescope_condition."""
         config_file = self.config_manager.find_config_file()
         if not config_file:
             raise ConfigNotFoundError("could not find nscb.conf")
@@ -124,6 +148,7 @@ class Application:
         config_result = self.config_manager.load_config(config_file)
         merged_profiles = []
         exports = dict(config_result.exports)
+        gamescope_condition = None
 
         for profile in profiles:
             if profile not in config_result.profiles:
@@ -131,11 +156,13 @@ class Application:
             entry = config_result.profiles[profile]
             merged_profiles.append(shlex.split(entry.args))
             exports.update(entry.exports)
+            if entry.gamescope_condition is not None:
+                gamescope_condition = entry.gamescope_condition
 
         final_args = self.profile_manager.merge_multiple_profiles(
             merged_profiles + [args]
         )
-        return final_args, exports
+        return final_args, exports, gamescope_condition
 
 
 def main() -> ExitCode:

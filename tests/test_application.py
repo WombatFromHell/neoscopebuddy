@@ -148,7 +148,9 @@ class TestApplicationUnit:
 
         # Mock the _process_profiles internal method
         mock_process_profiles = mocker.patch.object(
-            app, "_process_profiles", return_value=(["--", "test_app"], {})
+            app,
+            "_process_profiles",
+            return_value=(["--", "test_app"], {}, None),
         )
 
         app.run(["-p", "test_profile", "--", "test_app"])
@@ -187,7 +189,7 @@ class TestApplicationUnit:
         )
 
         # Call the internal method
-        final_args, exports = app._process_profiles(
+        final_args, exports, condition = app._process_profiles(
             ["test_profile"], ["--", "test_app"]
         )
 
@@ -745,3 +747,292 @@ class TestApplicationFixtureUtilization:
 
         # Verify the result
         assert result == 0
+
+
+class TestApplicationCondition:
+    """Tests for the gamescope_condition-based gamescope bypass feature."""
+
+    def test_condition_true_runs_gamescope(self, mocker):
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {"gaming": ProfileEntry("-f -W 1920", gamescope_condition="true")},
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.evaluate_condition",
+            return_value=True,
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        app = Application()
+        result = app.run(["-p", "gaming", "--", "mygame"])
+
+        assert result == 0
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "gamescope" in call_args
+
+    def test_condition_false_execs_bare(self, mocker):
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {"gaming": ProfileEntry("-f -W 1920", gamescope_condition="false")},
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.evaluate_condition",
+            return_value=False,
+        )
+        mock_bare = mocker.patch(
+            "nscb.command_executor.CommandExecutor.execute_bare", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        app = Application()
+        result = app.run(["-p", "gaming", "--", "mygame"])
+
+        assert result == 0
+        mock_bare.assert_called_once()
+        call_args = mock_bare.call_args[0]
+        assert "mygame" in call_args[0]
+
+    def test_condition_skipped_when_gamescope_already_active(self, mocker):
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {"gaming": ProfileEntry("-f", gamescope_condition="false")},
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=True,
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        app = Application()
+        result = app.run(["-p", "gaming", "--", "mygame"])
+
+        assert result == 0
+        # gamescope path was used, not the bare exec
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "gamescope" not in call_args  # active path skips gamescope wrapper
+
+    def test_condition_none_normal_flow(self, mocker):
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {"gaming": ProfileEntry("-f")},
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        app = Application()
+        result = app.run(["-p", "gaming", "--", "mygame"])
+
+        assert result == 0
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "gamescope" in call_args
+
+    def test_condition_false_no_separator_returns_1(self, mocker):
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {"gaming": ProfileEntry("-f -W 1920", gamescope_condition="false")},
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.evaluate_condition",
+            return_value=False,
+        )
+        mocker.patch("builtins.print")
+
+        app = Application()
+        result = app.run(["-p", "gaming"])
+
+        assert result == 1
+
+    def test_condition_last_profile_wins(self, mocker):
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {
+                "base": ProfileEntry("-f", gamescope_condition="1 -eq 1"),
+                "override": ProfileEntry("-W 1920", gamescope_condition="1 -eq 0"),
+            },
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.evaluate_condition",
+            return_value=False,
+        )
+        mocker.patch("builtins.print")
+        mock_bare = mocker.patch(
+            "nscb.command_executor.CommandExecutor.execute_bare", return_value=0
+        )
+
+        app = Application()
+        app.run(["-p", "base,override", "--", "mygame"])
+
+        # override's gamescope_condition=1 -eq 0 wins → bare exec
+        mock_bare.assert_called_once()
+
+    def test_condition_xdg_desktop_match(self, mocker, monkeypatch):
+        """Condition true → gamescope path taken (evaluate_condition itself tested elsewhere)."""
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        monkeypatch.setenv("XDG_CURRENT_DESKTOP", "niri")
+        mock_config_result = ConfigResult(
+            {
+                "gaming": ProfileEntry(
+                    "-f -W 1920",
+                    gamescope_condition='"$XDG_CURRENT_DESKTOP" = "niri"',
+                )
+            },
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.evaluate_condition",
+            return_value=True,
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        app = Application()
+        result = app.run(["-p", "gaming", "--", "mygame"])
+
+        assert result == 0
+        call_args = mock_run.call_args[0][0]
+        assert "gamescope" in call_args
+
+    def test_condition_xdg_desktop_no_match(self, mocker, monkeypatch):
+        """Real sh evaluation: condition does not match XDG_CURRENT_DESKTOP."""
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        monkeypatch.setenv("XDG_CURRENT_DESKTOP", "gnome")
+        mock_config_result = ConfigResult(
+            {
+                "gaming": ProfileEntry(
+                    "-f -W 1920",
+                    gamescope_condition='"$XDG_CURRENT_DESKTOP" = "niri"',
+                )
+            },
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+        mock_bare = mocker.patch(
+            "nscb.command_executor.CommandExecutor.execute_bare", return_value=0
+        )
+
+        app = Application()
+        app.run(["-p", "gaming", "--", "mygame"])
+
+        mock_bare.assert_called_once()

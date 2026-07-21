@@ -2,7 +2,9 @@
 
 import os
 import shlex
+import shutil
 import subprocess
+from pathlib import Path
 
 from .environment_helper import EnvironmentHelper, debug_log
 from .system_detector import SystemDetector
@@ -180,3 +182,53 @@ class CommandExecutor:
             return ""
         quoted = [shlex.quote(arg) for arg in args]
         return " ".join(quoted)
+
+    @staticmethod
+    def evaluate_condition(condition: str) -> bool:
+        """Evaluate a structured gamescope_condition predicate.
+
+        Supported forms:
+        env:VAR=value   - true if os.environ.get(VAR) == value
+        env:VAR         - true if VAR is set (any non-empty value)
+        cmd:name        - true if `name` is found on PATH (shutil.which)
+        file:/path       - true if path exists
+
+        No shell is invoked - this is pure Python string matching against
+        os.environ / shutil.which / Path.exists, so there is no command
+        injection surface regardless of what's written in nscb.conf.
+        """
+        if condition.startswith("env:"):
+            rest = condition[4:]
+            if "=" in rest:
+                var, _, value = rest.partition("=")
+                return os.environ.get(var) == value
+            return bool(os.environ.get(rest))
+        if condition.startswith("cmd:"):
+            return shutil.which(condition[4:]) is not None
+        if condition.startswith("file:"):
+            return Path(condition[5:]).exists()
+        return False  # unrecognized form - fail closed, don't guess
+
+    @staticmethod
+    def execute_bare(args: ArgsList, exports: EnvExports | None = None) -> ExitCode:
+        """Run the app command directly, bypassing gamescope.
+
+        Applies NSCB_PRE_CMD / NSCB_POST_CMD consistently with the gamescope
+        paths so condition-triggered fallback doesn't silently drop hooks.
+        """
+        try:
+            dash_index = args.index("--")
+            app_args = args[dash_index + 1 :]
+        except ValueError:
+            debug_log("execute_bare: no '--' separator found")
+            return 1
+
+        if not app_args:
+            return 0
+
+        cmd = CommandExecutor._build_app_command(app_args)
+        pre_cmd, post_cmd = CommandExecutor.get_env_commands()
+        final_command = CommandExecutor.build_command([pre_cmd, cmd, post_cmd])
+
+        print("Executing (no gamescope):", final_command, flush=True)
+        return CommandExecutor.run_nonblocking(final_command, exports)

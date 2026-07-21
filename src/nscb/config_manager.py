@@ -80,6 +80,12 @@ class ConfigManager:
                         )
                         continue
 
+                    if line.startswith("gamescope_condition=") and current:
+                        profiles[current].gamescope_condition = line[
+                            len("gamescope_condition=") :
+                        ]
+                        continue
+
                     if current:
                         profiles[current].args = ConfigManager._sanitize_config_value(
                             line

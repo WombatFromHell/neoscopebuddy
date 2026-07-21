@@ -11,6 +11,7 @@ class ProfileEntry:
 
     args: str
     exports: EnvExports = field(default_factory=dict)
+    gamescope_condition: str | None = None
 
 
 @dataclass

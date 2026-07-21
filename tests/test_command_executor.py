@@ -755,3 +755,115 @@ class TestCommandExecutorEndToEnd:
         assert "gamescope -f -- testapp" in call_args
 
         assert result == 0
+
+
+class TestEvaluateCondition:
+    """Tests for CommandExecutor.evaluate_condition (structured predicates, no shell)."""
+
+    def test_env_var_equals_match(self, monkeypatch):
+        monkeypatch.setenv("XDG_CURRENT_DESKTOP", "niri")
+        assert (
+            CommandExecutor.evaluate_condition("env:XDG_CURRENT_DESKTOP=niri") is True
+        )
+
+    def test_env_var_equals_no_match(self, monkeypatch):
+        monkeypatch.setenv("XDG_CURRENT_DESKTOP", "gnome")
+        assert (
+            CommandExecutor.evaluate_condition("env:XDG_CURRENT_DESKTOP=niri") is False
+        )
+
+    def test_env_var_set_any_value(self, monkeypatch):
+        monkeypatch.setenv("SOME_VAR", "anything")
+        assert CommandExecutor.evaluate_condition("env:SOME_VAR") is True
+
+    def test_env_var_not_set(self, monkeypatch):
+        monkeypatch.delenv("UNSET_VAR", raising=False)
+        assert CommandExecutor.evaluate_condition("env:UNSET_VAR") is False
+
+    def test_env_var_set_but_empty(self, monkeypatch):
+        monkeypatch.setenv("EMPTY_VAR", "")
+        assert CommandExecutor.evaluate_condition("env:EMPTY_VAR") is False
+
+    def test_cmd_found_on_path(self, mocker):
+        mocker.patch("shutil.which", return_value="/usr/bin/kscreen-doctor")
+        assert CommandExecutor.evaluate_condition("cmd:kscreen-doctor") is True
+
+    def test_cmd_not_found_on_path(self, mocker):
+        mocker.patch("shutil.which", return_value=None)
+        assert CommandExecutor.evaluate_condition("cmd:nonexistent-tool") is False
+
+    def test_file_exists(self, mocker):
+        mocker.patch("pathlib.Path.exists", return_value=True)
+        assert CommandExecutor.evaluate_condition("file:/tmp/marker") is True
+
+    def test_file_does_not_exist(self, mocker):
+        mocker.patch("pathlib.Path.exists", return_value=False)
+        assert CommandExecutor.evaluate_condition("file:/tmp/missing") is False
+
+    def test_unrecognized_form_fails_closed(self):
+        assert CommandExecutor.evaluate_condition("garbage:whatever") is False
+
+    def test_bare_string_no_prefix_fails_closed(self):
+        assert CommandExecutor.evaluate_condition("true") is False
+
+
+class TestExecuteBare:
+    """Tests for CommandExecutor.execute_bare."""
+
+    def test_execute_bare_runs_app_command(self, mocker):
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.get_env_commands",
+            return_value=("", ""),
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        result = CommandExecutor.execute_bare(["--", "mygame", "--flag"])
+
+        assert result == 0
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert "mygame" in cmd
+        assert "--flag" in cmd
+
+    def test_execute_bare_no_separator_returns_1(self, mocker):
+        result = CommandExecutor.execute_bare(["-f", "-W", "1920"])
+        assert result == 1
+
+    def test_execute_bare_empty_app_args_returns_0(self, mocker):
+        result = CommandExecutor.execute_bare(["--"])
+        assert result == 0
+
+    def test_execute_bare_applies_pre_post_hooks(self, mocker):
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.get_env_commands",
+            return_value=("echo pre", "echo post"),
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        CommandExecutor.execute_bare(["--", "mygame"])
+
+        cmd = mock_run.call_args[0][0]
+        assert "echo pre" in cmd
+        assert "echo post" in cmd
+        assert "mygame" in cmd
+
+    def test_execute_bare_passes_exports(self, mocker):
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.get_env_commands",
+            return_value=("", ""),
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+
+        exports = {"MY_VAR": "1"}
+        CommandExecutor.execute_bare(["--", "mygame"], exports)
+
+        assert mock_run.call_args[0][1] == exports

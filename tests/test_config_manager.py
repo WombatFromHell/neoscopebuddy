@@ -620,3 +620,25 @@ class TestConfigManagerSections:
         content = '["my-profile"]\n-f\n'
         result = ConfigManager.load_config(temp_config_with_content(content))
         assert result.profiles["my-profile"].args == "-f"
+
+    def test_condition_in_section(self, temp_config_with_content):
+        content = "[gaming]\ngamescope_condition=test -f /tmp/no-gs\n-f -W 1920\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["gaming"].gamescope_condition == "test -f /tmp/no-gs"
+        assert result.profiles["gaming"].args == "-f -W 1920"
+
+    def test_condition_not_consumed_as_args(self, temp_config_with_content):
+        content = "[gaming]\ngamescope_condition=true\n-f -W 1920\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["gaming"].args == "-f -W 1920"
+
+    def test_condition_none_when_absent(self, temp_config_with_content):
+        content = "[gaming]\n-f -W 1920\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["gaming"].gamescope_condition is None
+
+    def test_condition_last_wins_on_duplicate_section(self, temp_config_with_content):
+        content = "[gaming]\ngamescope_condition=first\n-f\n\n[gaming]\ngamescope_condition=second\n-W 1920\n"
+        result = ConfigManager.load_config(temp_config_with_content(content))
+        assert result.profiles["gaming"].gamescope_condition == "second"
+        assert result.profiles["gaming"].args == "-W 1920"
