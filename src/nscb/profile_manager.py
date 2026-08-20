@@ -89,6 +89,7 @@ class ProfileManager:
         conflict_canon_set = {
             ProfileManager._canon("-f"),  # fullscreen
             ProfileManager._canon("-b"),  # borderless
+            ProfileManager._canon("--backend"),
         }
 
         # Classify flags into conflict and non-conflict categories
@@ -156,7 +157,8 @@ class ProfileManager:
     @staticmethod
     def _canon(flag: str) -> str:
         """Convert flag to canonical form."""
-        return GAMESCOPE_ARGS_MAP.get(flag, flag)
+        name, _, _ = flag.partition("=")
+        return GAMESCOPE_ARGS_MAP.get(name, name)
 
     @staticmethod
     def _flags_to_args_list(flags: list[FlagTuple]) -> ArgsList:

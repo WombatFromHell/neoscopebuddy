@@ -227,7 +227,7 @@ graph TD
 
     CANON["_canon(flag)<br/>short → long via GAMESCOPE_ARGS_MAP"]
 
-    CLASSIFY["classify flags<br/>conflict: {-f, -b}<br/>non-conflict: everything else"]
+    CLASSIFY["classify flags<br/>conflict: {-f, -b, --backend}<br/>non-conflict: everything else"]
 
     RESOLVE["resolve conflicts<br/>override wins if present"]
     PRESERVE["preserve non-conflicts<br/>override removes matching profile flags"]

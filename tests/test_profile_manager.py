@@ -74,6 +74,10 @@ class TestProfileManagerUnit:
             (["-f", "-W", "1920"], [], ["-f", "-W", "1920"]),
             # Application separator preservation
             (["-f", "--", "app.exe"], ["-W", "1920"], ["-f", "-W", "1920"]),
+            # backend conflict resolution across forms
+            (["--backend=wayland"], ["--backend=sdl2"], ["--backend=sdl2"]),
+            (["--backend", "wayland"], ["--backend=sdl2"], ["--backend=sdl2"]),
+            (["--backend=wayland"], ["--backend", "sdl2"], ["--backend", "sdl2"]),
         ],
     )
     def test_merge_arguments_variations_parametrized(
@@ -207,6 +211,12 @@ class TestProfileManagerUnit:
             "-W",
             "1920",
         ]
+
+        # Test = form value flags merge with last-wins ordering
+        result = ProfileManager.merge_multiple_profiles(
+            [["--framerate-limit=120"], ["--framerate-limit=60"]]
+        )
+        assert result == ["--framerate-limit=60"]
 
         # Test multiple profiles with display mode conflicts
         profiles = [
