@@ -78,9 +78,12 @@ ENVIRONMENT HOOKS (optional)
   NSCB_POST_CMD=command             Run after gamescope exits
   NSCB_DEBUG=1                      Enable debug logging to stderr
   NSCB_DISABLE_LD_PRELOAD_WRAP=1    Skip preserving LD_PRELOAD to child process 
-                                    (by default, nscb re-injects LD_PRELOAD after
-                                    gamescope strips it; set this to disable
-        """
+                                     (by default, nscb re-injects LD_PRELOAD after
+                                     gamescope strips it; set this to disable)
+  NSCB_FRAMELIMIT=<hz>               Force -r/--nested-refresh, overriding any
+                                     profile or explicit -r (ignored when gamescope
+                                     is already active)
+         """
     )
 
 

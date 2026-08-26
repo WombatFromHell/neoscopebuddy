@@ -83,27 +83,62 @@ class CommandExecutor:
             dash_index = args.index("--")
             gamescope_args = args[:dash_index]
             app_args = args[dash_index + 1 :]
-            debug_log(
-                f"_build_inactive_gamescope_command: gamescope_args={gamescope_args}, app_args={app_args}"
-            )
+        except ValueError:
+            gamescope_args = args
+            app_args = []
 
+        gamescope_args = CommandExecutor._apply_framelimit(gamescope_args)
+        debug_log(
+            f"_build_inactive_gamescope_command: gamescope_args={gamescope_args}, app_args={app_args}"
+        )
+
+        if app_args:
             gamescope_cmd = CommandExecutor._build_gamescope_command_for_inactive(
                 gamescope_args, has_ld_preload
             )
             final_app_cmd = CommandExecutor._build_final_app_command(
                 app_args, has_ld_preload
             )
-
             full_cmd = f"{gamescope_cmd} -- {final_app_cmd}"
             final_command = CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
-        except ValueError:
+        else:
             gamescope_cmd = CommandExecutor._build_gamescope_command_for_inactive(
-                args, has_ld_preload
+                gamescope_args, has_ld_preload
             )
             final_command = CommandExecutor.build_command(
                 [pre_cmd, gamescope_cmd, post_cmd]
             )
         return final_command
+
+    @staticmethod
+    def _apply_framelimit(gamescope_args: ArgsList) -> ArgsList:
+        """Prepend NSCB_FRAMELIMIT as -r, overriding any existing -r/--nested-refresh."""
+        # ponytail: env force-wins; only matters at gamescope launch (inactive path).
+        refresh = EnvironmentHelper.get_framelimit()
+        if refresh is None:
+            return gamescope_args
+        stripped = CommandExecutor._strip_flag(
+            gamescope_args, {"-r", "--nested-refresh"}
+        )
+        debug_log(f"_apply_framelimit: injecting -r {refresh}")
+        return ["-r", str(refresh)] + stripped
+
+    @staticmethod
+    def _strip_flag(args: ArgsList, names: set[str]) -> ArgsList:
+        """Remove the given flags and their values (two-token or --name=val form)."""
+        result: ArgsList = []
+        i = 0
+        while i < len(args):
+            token = args[i]
+            if token in names:
+                i += 2 if i + 1 < len(args) else 1
+                continue
+            if any(token.startswith(f"{n}=") for n in names):
+                i += 1
+                continue
+            result.append(token)
+            i += 1
+        return result
 
     @staticmethod
     def _check_ld_preload_status() -> bool:

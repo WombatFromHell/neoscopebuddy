@@ -332,14 +332,15 @@ gaming=-f -W 1920 -H 1080
 
 ## Environment Variables
 
-| Variable                         | Purpose                           |
-| -------------------------------- | --------------------------------- |
-| `NSCB_PRE_CMD` / `NSCB_PRECMD`   | Pre-execution hook                |
-| `NSCB_POST_CMD` / `NSCB_POSTCMD` | Post-execution hook               |
-| `NSCB_DEBUG=1`                   | Debug logging to stderr           |
-| `NSCB_DISABLE_LD_PRELOAD_WRAP=1` | Disable LD_PRELOAD preservation   |
-| `FAUGUS_LOG`                     | Auto-disables LD_PRELOAD wrapping |
-| `XDG_CURRENT_DESKTOP`            | Gamescope detection               |
+| Variable                         | Purpose                                                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `NSCB_PRE_CMD` / `NSCB_PRECMD`   | Pre-execution hook                                                                                     |
+| `NSCB_POST_CMD` / `NSCB_POSTCMD` | Post-execution hook                                                                                    |
+| `NSCB_DEBUG=1`                   | Debug logging to stderr                                                                                |
+| `NSCB_DISABLE_LD_PRELOAD_WRAP=1` | Disable LD_PRELOAD preservation                                                                        |
+| `NSCB_FRAMELIMIT=<hz>`           | Force `-r`/`--nested-refresh` (overrides profile/explicit `-r`; ignored when gamescope already active) |
+| `FAUGUS_LOG`                     | Auto-disables LD_PRELOAD wrapping                                                                      |
+| `XDG_CURRENT_DESKTOP`            | Gamescope detection                                                                                    |
 
 ## Exception Hierarchy
 

@@ -177,6 +177,25 @@ class TestEnvironmentHelperUnit:
         monkeypatch.delenv("FAUGUS_LOG", raising=False)
         assert EnvironmentHelper.should_disable_ld_preload_wrap() is False
 
+    @pytest.mark.parametrize(
+        "env_val,expected",
+        [
+            (None, None),
+            ("60", 60),
+            ("144", 144),
+            ("", None),
+            ("abc", None),
+            ("-1", None),
+            ("0", None),
+        ],
+    )
+    def test_get_framelimit(self, monkeypatch, env_val, expected):
+        if env_val is None:
+            monkeypatch.delenv("NSCB_FRAMELIMIT", raising=False)
+        else:
+            monkeypatch.setenv("NSCB_FRAMELIMIT", env_val)
+        assert EnvironmentHelper.get_framelimit() == expected
+
 
 class TestEnvironmentHelperIntegration:
     """Integration tests for EnvironmentHelper with other modules."""

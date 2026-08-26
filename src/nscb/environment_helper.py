@@ -25,6 +25,22 @@ class EnvironmentHelper:
         return pre_cmd.strip(), post_cmd.strip()
 
     @staticmethod
+    def get_framelimit() -> "int | None":
+        """Read NSCB_FRAMELIMIT; returns a positive int or None (invalid ignored)."""
+        raw = os.environ.get("NSCB_FRAMELIMIT")
+        if raw is None:
+            return None
+        try:
+            value = int(raw)
+        except ValueError:
+            debug_log(f"get_framelimit: ignoring non-integer NSCB_FRAMELIMIT={raw!r}")
+            return None
+        if value <= 0:
+            debug_log(f"get_framelimit: ignoring non-positive NSCB_FRAMELIMIT={value}")
+            return None
+        return value
+
+    @staticmethod
     def is_gamescope_active() -> bool:
         """Determine if system runs under gamescope."""
         # Check XDG_CURRENT_DESKTOP first (more reliable than ps check)

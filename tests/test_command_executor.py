@@ -541,6 +541,95 @@ class TestCommandExecutorEndToEnd:
         # Should build a command with gamescope and the args directly
         assert "gamescope -f -W 1920" in result
 
+    def test_build_inactive_gamescope_command_framelimit_injects(
+        self, mocker, monkeypatch
+    ):
+        """NSCB_FRAMELIMIT injects -r into the gamescope launch args."""
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False,
+        )
+        monkeypatch.setenv("NSCB_FRAMELIMIT", "60")
+
+        monkeypatch.delenv("LD_PRELOAD", raising=False)
+        monkeypatch.delenv("NSCB_DEBUG", raising=False)
+
+        result = CommandExecutor._build_inactive_gamescope_command(
+            ["-f", "-W", "1920"], "", ""
+        )
+        assert "gamescope -r 60 -f -W 1920" in result
+
+    def test_build_inactive_gamescope_command_framelimit_overrides_existing_r(
+        self, mocker, monkeypatch
+    ):
+        """NSCB_FRAMELIMIT overrides a profile/explicit -r."""
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False,
+        )
+        monkeypatch.setenv("NSCB_FRAMELIMIT", "60")
+
+        monkeypatch.delenv("LD_PRELOAD", raising=False)
+        monkeypatch.delenv("NSCB_DEBUG", raising=False)
+
+        result = CommandExecutor._build_inactive_gamescope_command(
+            ["-r", "144", "-f"], "", ""
+        )
+        assert "gamescope -r 60 -f" in result
+        assert "-r 144" not in result
+
+    def test_build_inactive_gamescope_command_framelimit_with_separator(
+        self, mocker, monkeypatch
+    ):
+        """NSCB_FRAMELIMIT only affects gamescope args before --, not the app."""
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False,
+        )
+        monkeypatch.setenv("NSCB_FRAMELIMIT", "60")
+
+        monkeypatch.delenv("LD_PRELOAD", raising=False)
+        monkeypatch.delenv("NSCB_DEBUG", raising=False)
+
+        result = CommandExecutor._build_inactive_gamescope_command(
+            ["-f", "--", "/bin/mygame"], "", ""
+        )
+        assert "gamescope -r 60 -f -- /bin/mygame" in result
+
+    def test_build_active_gamescope_command_ignores_framelimit(
+        self, mocker, monkeypatch
+    ):
+        """NSCB_FRAMELIMIT is ignored when gamescope is already active."""
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=True,
+        )
+        mocker.patch(
+            "nscb.environment_helper.EnvironmentHelper.should_disable_ld_preload_wrap",
+            return_value=False,
+        )
+        monkeypatch.setenv("NSCB_FRAMELIMIT", "60")
+
+        monkeypatch.delenv("LD_PRELOAD", raising=False)
+        monkeypatch.delenv("NSCB_DEBUG", raising=False)
+
+        result = CommandExecutor._build_active_gamescope_command(
+            ["-f", "-W", "1920"], "", ""
+        )
+        assert "gamescope -r 60" not in result
+
     def test_build_active_gamescope_command_no_separator(self, mocker, monkeypatch):
         """Test _build_active_gamescope_command when no -- separator is found."""
         # Mock environment detection
