@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .display_detector import DisplayDetector
 from .environment_helper import EnvironmentHelper, debug_log
 from .system_detector import SystemDetector
 from .types import ArgsList, CommandTuple, EnvExports, ExitCode
@@ -88,6 +89,7 @@ class CommandExecutor:
             app_args = []
 
         gamescope_args = CommandExecutor._apply_framelimit(gamescope_args)
+        gamescope_args = CommandExecutor._apply_auto_res(gamescope_args)
         debug_log(
             f"_build_inactive_gamescope_command: gamescope_args={gamescope_args}, app_args={app_args}"
         )
@@ -122,6 +124,38 @@ class CommandExecutor:
         )
         debug_log(f"_apply_framelimit: injecting -r {refresh}")
         return ["-r", str(refresh)] + stripped
+
+    @staticmethod
+    def _apply_auto_res(gamescope_args: ArgsList) -> ArgsList:
+        """Inject -W/-H from the active display when auto-res is active.
+
+        Explicit resolution flags always win. Without NSCB_AUTO_RES set, auto-res
+        is inferred on only when no -w/-h/-W/-H flag is present. NSCB_AUTO_RES=0|false
+        disables; =1|true forces on. No backend / detection failure is a no-op.
+        """
+        # ponytail: explicit flags always win — never override user intent.
+        if DisplayDetector.has_resolution_flag(gamescope_args):
+            return gamescope_args
+        raw = os.environ.get("NSCB_AUTO_RES")
+        if raw is not None:
+            if raw.lower() in ("0", "false", "no", "off"):
+                return gamescope_args
+            if raw.lower() not in ("1", "true", "yes", "on"):
+                debug_log(
+                    f"_apply_auto_res: unrecognized NSCB_AUTO_RES={raw!r}, skipping"
+                )
+                return gamescope_args
+        prefer = DisplayDetector.extract_prefer_output(gamescope_args)
+        res = DisplayDetector.get_resolution(prefer)
+        if res is None:
+            debug_log("_apply_auto_res: no resolution detected, skipping")
+            return gamescope_args
+        w, h = res
+        # strip before prepend so an existing -W/-H (set by profile, not CLI) is replaced
+        stripped = CommandExecutor._strip_flag(gamescope_args, {"-W", "--output-width"})
+        stripped = CommandExecutor._strip_flag(stripped, {"-H", "--output-height"})
+        debug_log(f"_apply_auto_res: injecting -W {w} -H {h}")
+        return ["-W", str(w), "-H", str(h)] + stripped
 
     @staticmethod
     def _strip_flag(args: ArgsList, names: set[str]) -> ArgsList:

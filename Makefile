@@ -8,8 +8,9 @@ OUT = $(BUILD_DIR)/$(ARTIFACT)
 CHECKSUM = $(BUILD_DIR)/$(ARTIFACT).sha256sum
 
 # Fixed epoch for reproducible builds:
-# Use epoch 1 (Jan 1, 1970) for maximum determinism
-SOURCE_DATE_EPOCH ?= 1
+# Use epoch 1 (Jan 1, 1970) for maximum determinism.
+# := (not ?=) so the environment cannot override it.
+SOURCE_DATE_EPOCH := 1
 
 # Extract version from pyproject.toml
 VERSION := $(shell grep '^version = ' pyproject.toml | cut -d'"' -f2)
@@ -33,7 +34,6 @@ configure:
 	uv sync --frozen
 
 build: clean
-	export SOURCE_DATE_EPOCH=1
 	@echo "Building $(ARTIFACT) (version $(VERSION))"
 	@echo "SOURCE_DATE_EPOCH: $(SOURCE_DATE_EPOCH) ($(TIMESTAMP))"
 	mkdir -p $(BUILD_DIR)

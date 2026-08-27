@@ -108,7 +108,8 @@
           (cd staging && find . \( -type d -o -type f \) | LC_ALL=C sort | zip -X -q -@ archive.zip)
 
           # Prepend shebang to create executable pyz
-          echo '#!/usr/bin/python3' > $out
+          # Must match the Makefile build's shebang for bitwise reproducibility.
+          echo '#!/usr/bin/env python3' > $out
           cat staging/archive.zip >> $out
           chmod +x $out
         '';

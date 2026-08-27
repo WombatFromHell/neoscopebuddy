@@ -81,9 +81,12 @@ ENVIRONMENT HOOKS (optional)
                                      (by default, nscb re-injects LD_PRELOAD after
                                      gamescope strips it; set this to disable)
   NSCB_FRAMELIMIT=<hz>               Force -r/--nested-refresh, overriding any
-                                     profile or explicit -r (ignored when gamescope
-                                     is already active)
-         """
+                                      profile or explicit -r (ignored when gamescope
+                                      is already active)
+  NSCB_AUTO_RES=<0|1|true|false>     Auto-inject -W/-H from the active display
+                                      (niri/KDE). On by default when no -w/-h/-W/-H
+                                      flag is given; explicit flags always win
+          """
     )
 
 

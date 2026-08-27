@@ -305,6 +305,13 @@ class TestCommandExecutorModuleIntegration:
 class TestCommandExecutorEndToEnd:
     """End-to-end tests for CommandExecutor functionality."""
 
+    @pytest.fixture(autouse=True)
+    def _disable_auto_res(self, mocker):
+        # These tests assert exact commands and shouldn't hit a real display backend.
+        mocker.patch(
+            "nscb.command_executor.DisplayDetector.get_resolution", return_value=None
+        )
+
     def test_execute_gamescope_command_normal_execution(self, mocker):
         mocker.patch(
             "nscb.command_executor.CommandExecutor.get_env_commands",
@@ -956,3 +963,55 @@ class TestExecuteBare:
         CommandExecutor.execute_bare(["--", "mygame"], exports)
 
         assert mock_run.call_args[0][1] == exports
+
+
+class TestApplyAutoRes:
+    """Coverage for NSCB_AUTO_RES injection in CommandExecutor."""
+
+    def test_injects_when_no_explicit_flag(self, monkeypatch, mocker):
+        monkeypatch.delenv("NSCB_AUTO_RES", raising=False)
+        mocker.patch(
+            "nscb.command_executor.DisplayDetector.get_resolution",
+            return_value=(3440, 1440),
+        )
+        result = CommandExecutor._apply_auto_res(["-f"])
+        assert result[:4] == ["-W", "3440", "-H", "1440"]
+        assert "-f" in result
+
+    def test_explicit_flag_always_wins(self, monkeypatch, mocker):
+        monkeypatch.setenv("NSCB_AUTO_RES", "1")
+        mock_res = mocker.patch(
+            "nscb.command_executor.DisplayDetector.get_resolution",
+            return_value=(3440, 1440),
+        )
+        result = CommandExecutor._apply_auto_res(["-W", "1920", "-H", "1080"])
+        assert result == ["-W", "1920", "-H", "1080"]
+        mock_res.assert_not_called()
+
+    def test_explicit_disable_skips(self, monkeypatch, mocker):
+        monkeypatch.setenv("NSCB_AUTO_RES", "false")
+        mock_res = mocker.patch(
+            "nscb.command_executor.DisplayDetector.get_resolution",
+            return_value=(3440, 1440),
+        )
+        result = CommandExecutor._apply_auto_res(["-f"])
+        assert result == ["-f"]
+        mock_res.assert_not_called()
+
+    def test_detection_failure_is_noop(self, monkeypatch, mocker):
+        monkeypatch.delenv("NSCB_AUTO_RES", raising=False)
+        mocker.patch(
+            "nscb.command_executor.DisplayDetector.get_resolution", return_value=None
+        )
+        assert CommandExecutor._apply_auto_res(["-f"]) == ["-f"]
+
+    def test_merged_resolution_flags_block_auto(self, monkeypatch, mocker):
+        # Profile-supplied -W/-H are already in the merged args, so auto-res defers.
+        monkeypatch.delenv("NSCB_AUTO_RES", raising=False)
+        mock_res = mocker.patch(
+            "nscb.command_executor.DisplayDetector.get_resolution",
+            return_value=(3440, 1440),
+        )
+        result = CommandExecutor._apply_auto_res(["-f", "-W", "1920", "-H", "1080"])
+        assert result == ["-f", "-W", "1920", "-H", "1080"]
+        mock_res.assert_not_called()

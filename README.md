@@ -51,13 +51,15 @@ Lines starting with `#` are comments. Quoted values have quotes stripped.
 
 ## Environment Variables
 
-| Variable                         | Description                                                |
-| -------------------------------- | ---------------------------------------------------------- |
-| `NSCB_PRE_CMD`                   | Command to run before gamescope                            |
-| `NSCB_POST_CMD`                  | Command to run after gamescope exits                       |
-| `NSCB_DEBUG=1`                   | Enable debug logging to stderr                             |
-| `NSCB_DISABLE_LD_PRELOAD_WRAP=1` | Skip preserving LD_PRELOAD to child process                |
-| `FAUGUS_LOG`                     | Auto-disables LD_PRELOAD wrapping (set by faugus-launcher) |
+| Variable                            | Description                                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `NSCB_PRE_CMD`                      | Command to run before gamescope                                                                         |
+| `NSCB_POST_CMD`                     | Command to run after gamescope exits                                                                    |
+| `NSCB_DEBUG=1`                      | Enable debug logging to stderr                                                                          |
+| `NSCB_DISABLE_LD_PRELOAD_WRAP=1`    | Skip preserving LD_PRELOAD to child process                                                             |
+| `NSCB_FRAMELIMIT=<hz>`              | Force `-r`/`--nested-refresh` (ignored when gamescope is already active)                                |
+| `NSCB_AUTO_RES=<0\|1\|true\|false>` | Auto-inject `-W`/`-H` from the active display (niri/KDE); explicit `-w`/`-h`/`-W`/`-H` flags always win |
+| `FAUGUS_LOG`                        | Auto-disables LD_PRELOAD wrapping (set by faugus-launcher)                                              |
 
 Legacy names `NSCB_PRECMD` and `NSCB_POSTCMD` also work.
 
