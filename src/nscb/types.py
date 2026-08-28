@@ -10,7 +10,6 @@ Type Aliases:
     EnvExports: Dictionary mapping environment variable names to values
     ExitCode: Integer representing process exit codes
     ProfileArgsList: List of argument lists for multiple profiles
-    CommandTuple: Tuple of two string commands (pre/post commands)
     """
 
 from typing import Dict, List, Optional, Tuple
@@ -30,10 +29,6 @@ ExitCode = int
 
 ProfileArgsList = List[ArgsList]
 """List of argument lists used for merging multiple profiles."""
-
-# Tuple type aliases for common patterns
-CommandTuple = Tuple[str, str]
-"""Tuple representing pre and post command strings (e.g., ('pre_cmd', 'post_cmd'))."""
 
 # Type aliases for method return types
 SplitResult = Tuple[ArgsList, ArgsList]

@@ -142,21 +142,16 @@ class ConfigManager:
     def _process_profile_line(
         line: str, line_num: int, config_file: str, profiles: dict[str, ProfileEntry]
     ) -> None:
-        """
-        Process a legacy name=args profile line.
-
-        Args:
-            line: The configuration line to process
-            line_num: Line number for error reporting
-            config_file: Config file path for error reporting
-            profiles: Dictionary to store profile configurations
-        """
+        """Process a legacy name=args profile line."""
         key, value = line.split("=", 1)
         key = ConfigManager._strip_quotes(key.strip())
-
-        ConfigManager._validate_and_store_profile(
-            key, value.strip(), line_num, config_file, profiles
-        )
+        # Security: reject invalid profile names; an empty key is a legacy no-op.
+        if key and not ConfigManager._is_valid_profile_name(key):
+            raise InvalidConfigError(
+                config_file, line_num, f"Invalid profile name: '{key}'"
+            )
+        if key:
+            profiles[key] = ProfileEntry(args=ConfigManager._strip_quotes(value.strip()))
 
     @staticmethod
     def _strip_quotes(value: str) -> str:
@@ -167,34 +162,6 @@ class ConfigManager:
         ):
             return value[1:-1]
         return value
-
-    @staticmethod
-    def _validate_and_store_profile(
-        key: str,
-        value: str,
-        line_num: int,
-        config_file: str,
-        profiles: dict[str, ProfileEntry],
-    ) -> None:
-        """Validate profile name and store if valid."""
-        # Security: Validate profile name (allow empty keys for backward compatibility)
-        if key and not ConfigManager._is_valid_profile_name(key):
-            raise InvalidConfigError(
-                config_file,
-                line_num,
-                f"Invalid profile name: '{key}'",
-            )
-
-        ConfigManager._sanitize_and_store_profile_value(key, value, profiles)
-
-    @staticmethod
-    def _sanitize_and_store_profile_value(
-        key: str, value: str, profiles: dict[str, ProfileEntry]
-    ) -> None:
-        """Sanitize value and store in profiles if valid."""
-        sanitized_value = ConfigManager._strip_quotes(value)
-        if key:
-            profiles[key] = ProfileEntry(args=sanitized_value)
 
     @staticmethod
     def _is_valid_env_var_name(name: str) -> bool:

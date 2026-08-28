@@ -8,10 +8,10 @@ class ArgumentProcessor:
 
     @staticmethod
     def split_at_separator(args: ArgsList) -> SplitResult:
-        """Split arguments at '--' separator."""
+        """Split at '--' into (before, after); the separator itself is dropped."""
         if "--" in args:
             idx = args.index("--")
-            return args[:idx], args[idx:]
+            return args[:idx], args[idx + 1 :]
         return args, []
 
     @staticmethod

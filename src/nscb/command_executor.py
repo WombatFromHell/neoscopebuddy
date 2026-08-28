@@ -6,10 +6,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .argument_processor import ArgumentProcessor
 from .display_detector import DisplayDetector
 from .environment_helper import EnvironmentHelper, debug_log
 from .system_detector import SystemDetector
-from .types import ArgsList, CommandTuple, EnvExports, ExitCode
+from .types import ArgsList, EnvExports, ExitCode
 
 
 class CommandExecutor:
@@ -24,7 +25,7 @@ class CommandExecutor:
         return subprocess.run(cmd, shell=True, env=env).returncode
 
     @staticmethod
-    def get_env_commands() -> CommandTuple:
+    def get_env_commands() -> tuple[str, str]:
         """Get pre/post commands from environment."""
         return EnvironmentHelper.get_pre_post_commands()
 
@@ -74,21 +75,13 @@ class CommandExecutor:
         return CommandExecutor.run_nonblocking(command, exports)
 
     @staticmethod
-    def _split_at_separator(args: ArgsList) -> tuple[ArgsList, ArgsList]:
-        """Split at '--' into (before, after); if absent, (args, [])."""
-        if "--" in args:
-            i = args.index("--")
-            return args[:i], args[i + 1 :]
-        return args, []
-
-    @staticmethod
     def _build_inactive_gamescope_command(
         args: ArgsList, pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is not active."""
         has_ld_preload = CommandExecutor._check_ld_preload_status()
 
-        gamescope_args, app_args = CommandExecutor._split_at_separator(args)
+        gamescope_args, app_args = ArgumentProcessor.split_at_separator(args)
 
         gamescope_args = CommandExecutor._apply_framelimit(gamescope_args)
         gamescope_args = CommandExecutor._apply_auto_res(gamescope_args)
@@ -212,7 +205,7 @@ class CommandExecutor:
         args: ArgsList, pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is already active."""
-        _, app_args = CommandExecutor._split_at_separator(args)
+        _, app_args = ArgumentProcessor.split_at_separator(args)
         debug_log(f"_build_active_gamescope_command: app_args={app_args}")
 
         # ponytail: noop path runs inside an existing gamescope, so the
@@ -288,7 +281,7 @@ class CommandExecutor:
         if "--" not in args:
             debug_log("execute_bare: no '--' separator found")
             return 1
-        app_args = CommandExecutor._split_at_separator(args)[1]
+        app_args = ArgumentProcessor.split_at_separator(args)[1]
 
         if not app_args:
             return 0

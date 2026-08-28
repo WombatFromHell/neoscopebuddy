@@ -34,6 +34,7 @@ graph TD
 
     command_executor --> environment_helper
     command_executor --> system_detector
+    command_executor --> argument_processor
     command_executor --> types
 
     config_manager --> config_result
@@ -75,7 +76,7 @@ graph TD
 | `path_helper.py`        | XDG config path resolution, `shutil.which` wrapper              | `PathHelper`                                |
 | `gamescope_args.py`     | Short-to-long flag mapping for conflict canonicalization        | `GAMESCOPE_ARGS_MAP`                        |
 | `types.py`              | Shared type aliases                                             | `ArgsList`, `FlagTuple`, `EnvExports`, etc. |
-| `exceptions.py`         | Exception hierarchy with structured attributes                  | `NscbError` and 8 subclasses                |
+| `exceptions.py`         | Exception hierarchy with structured attributes                  | `NscbError` + 3 subclasses                  |
 
 ## Runtime Call Graph
 
@@ -158,7 +159,7 @@ graph TD
     P --> R
 
     M -. "subprocess.run" .-> M2["subprocess.run"]
-    R -. "subprocess.check_output" .-> R2["ps ax"]
+    R -. "subprocess.check_output" .-> R2["pgrep -x gamescope"]
 ```
 
 ## Data Flow Map
@@ -222,7 +223,7 @@ The `merge_arguments` algorithm visualized:
 graph TD
     IN["merge_arguments(profile_args, override_args)"]
 
-    S1["split_at_separator(→before, after)"]
+    S1["split_at_separator(→ before, after; '--' dropped)"]
     S2["separate_flags_and_positionals"]
 
     CANON["_canon(flag)<br/>short → long via GAMESCOPE_ARGS_MAP"]
@@ -232,7 +233,7 @@ graph TD
     RESOLVE["resolve conflicts<br/>override wins if present"]
     PRESERVE["preserve non-conflicts<br/>override removes matching profile flags"]
 
-    ASSEMBLE["assemble: conflicts + non-conflicts + positionals + after-separator"]
+    ASSEMBLE["assemble: conflicts + non-conflicts + positionals + (-- + override app args if present)"]
 
     IN --> S1 --> S2 --> CLASSIFY
     CLASSIFY -->|"conflict flags"| RESOLVE
@@ -351,20 +352,10 @@ graph TD
     ConfigNotFound["ConfigNotFoundError<br/>path"]
     ProfileNotFound["ProfileNotFoundError<br/>profile_name, config_path"]
     InvalidConfig["InvalidConfigError<br/>path, line_num"]
-    ExecutableNotFound["ExecutableNotFoundError<br/>executable"]
-    CommandExecution["CommandExecutionError<br/>command, exit_code, stderr"]
-    ArgumentParse["ArgumentParseError<br/>argument"]
-    GamescopeActive["GamescopeActiveError"]
-    EnvVar["EnvironmentVariableError<br/>var_name"]
 
     NscbError --> ConfigNotFound
     NscbError --> ProfileNotFound
     NscbError --> InvalidConfig
-    NscbError --> ExecutableNotFound
-    NscbError --> CommandExecution
-    NscbError --> ArgumentParse
-    NscbError --> GamescopeActive
-    NscbError --> EnvVar
 
     style NscbError fill:#f96,stroke:#c66
 ```
@@ -378,7 +369,6 @@ graph TD
 | `EnvExports`      | `Dict[str, str]`                   | application, config_manager, command_executor |
 | `ExitCode`        | `int`                              | application, command_executor                 |
 | `ProfileArgsList` | `List[ArgsList]`                   | profile_manager                               |
-| `CommandTuple`    | `Tuple[str, str]`                  | command_executor, environment_helper          |
 | `SplitResult`     | `Tuple[ArgsList, ArgsList]`        | argument_processor                            |
 | `SeparatedArgs`   | `Tuple[List[FlagTuple], ArgsList]` | argument_processor                            |
 

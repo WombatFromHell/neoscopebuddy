@@ -13,10 +13,10 @@ class TestArgumentProcessorUnit:
     @pytest.mark.parametrize(
         "input_args,expected_before,expected_after",
         [
-            (["-f", "--", "app.exe"], ["-f"], ["--", "app.exe"]),
-            (["-f", "--", "app1", "--", "app2"], ["-f"], ["--", "app1", "--", "app2"]),
+            (["-f", "--", "app.exe"], ["-f"], ["app.exe"]),
+            (["-f", "--", "app1", "--", "app2"], ["-f"], ["app1", "--", "app2"]),
             (["-f", "-W", "1920"], ["-f", "-W", "1920"], []),
-            (["--", "app.exe"], [], ["--", "app.exe"]),
+            (["--", "app.exe"], [], ["app.exe"]),
             ([], [], []),
             (["-f"], ["-f"], []),
         ],
@@ -153,7 +153,7 @@ class TestArgumentProcessorIntegration:
             ["-f", "-W", "1920", "--", "game.exe", "save1"]
         )
         assert before == ["-f", "-W", "1920"]
-        assert after == ["--", "game.exe", "save1"]
+        assert after == ["game.exe", "save1"]
 
         # Separate flags and positionals
         flags, positionals = ArgumentProcessor.separate_flags_and_positionals(
@@ -171,7 +171,7 @@ class TestArgumentProcessorIntegration:
 
         assert flags_before == [("-f", None), ("-W", "1920")]
         assert pos_before == ["game.exe"]
-        assert after_split == ["--", "extra_args"]
+        assert after_split == ["extra_args"]
 
 
 class TestArgumentProcessorEndToEnd:
@@ -220,7 +220,7 @@ class TestArgumentProcessorEndToEnd:
         # Test only separator
         before, after = ArgumentProcessor.split_at_separator(["--"])
         assert before == []
-        assert after == ["--"]
+        assert after == []
 
         # Test no separator
         before, after = ArgumentProcessor.split_at_separator(["-f", "app"])
@@ -232,7 +232,7 @@ class TestArgumentProcessorEndToEnd:
             ["-f", "--", "app", "--", "extra"]
         )
         assert before == ["-f"]
-        assert after == ["--", "app", "--", "extra"]
+        assert after == ["app", "--", "extra"]
 
     def test_argument_processing_full_pipeline_e2e(
         self, mocker, temp_config_with_content

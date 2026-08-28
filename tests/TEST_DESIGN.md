@@ -71,7 +71,6 @@ graph LR
 
     t_exc --> exceptions
     t_exc --> config_manager
-    t_exc --> profile_manager
 
     style application fill:#9f9,stroke:#6b6
     style profile_manager fill:#9f9,stroke:#6b6
@@ -92,7 +91,7 @@ graph LR
 | Source Module | Tested by |
 |---|---|
 | `application.py` | test_application, test_types, test_path_helper, test_config_manager, test_config_result, test_exceptions, test_system_detector, test_environment_helper, test_gamescope_args, test_argument_processor |
-| `profile_manager.py` | test_profile_manager, test_types, test_config_manager, test_exceptions, test_gamescope_args, test_argument_processor |
+| `profile_manager.py` | test_profile_manager, test_types, test_config_manager, test_gamescope_args, test_argument_processor |
 | `config_manager.py` | test_config_manager, test_config_result, test_path_helper, test_exceptions |
 | `command_executor.py` | test_command_executor, test_environment_helper |
 | `argument_processor.py` | test_argument_processor, test_types, test_gamescope_args |
