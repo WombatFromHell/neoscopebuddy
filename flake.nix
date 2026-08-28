@@ -107,9 +107,11 @@
           # Build deterministic zip: sorted file list, no extra attributes (-X)
           (cd staging && find . \( -type d -o -type f \) | LC_ALL=C sort | zip -X -q -@ archive.zip)
 
-          # Prepend shebang to create executable pyz
-          # Must match the Makefile build's shebang for bitwise reproducibility.
-          echo '#!/usr/bin/env python3' > $out
+          # Prepend shebang to create executable pyz.
+          # Absolute FHS path (/usr/bin/python3): /usr/bin/env python3 resolves to
+          # a nix python missing host libGL.so.1. Must match the Makefile shebang
+          # for bitwise reproducibility.
+          echo '#!/usr/bin/python3' > $out
           cat staging/archive.zip >> $out
           chmod +x $out
         '';

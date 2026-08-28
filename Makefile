@@ -64,7 +64,7 @@ build: clean
 		zip -X -q -@ ../archive.zip
 
 	# Prepend shebang to create executable pyz
-	echo '#!/usr/bin/env python3' > $(OUT)
+	echo '#!/usr/bin/python3' > $(OUT)
 	cat $(BUILD_DIR)/archive.zip >> $(OUT)
 	chmod +x $(OUT)
 
