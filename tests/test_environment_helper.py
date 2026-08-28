@@ -1,6 +1,7 @@
 """Tests for the environment helper functionality in NeoscopeBuddy."""
 
 import os
+import subprocess
 
 import pytest
 
@@ -78,9 +79,10 @@ class TestEnvironmentHelperUnit:
 
     def test_is_gamescope_active_not_gamescope_xdg(self, monkeypatch, mocker):
         monkeypatch.setenv("XDG_CURRENT_DESKTOP", "GNOME")
-        # When XDG_CURRENT_DESKTOP is not gamescope, it should check ps command
+        # When XDG_CURRENT_DESKTOP is not gamescope, it should check pgrep
         mocker.patch(
-            "subprocess.check_output", return_value="1234 ?    Sl     0:00 Xorg"
+            "subprocess.check_output",
+            side_effect=subprocess.CalledProcessError(1, "pgrep"),
         )
         assert EnvironmentHelper.is_gamescope_active() is False
 
@@ -95,7 +97,8 @@ class TestEnvironmentHelperUnit:
     def test_is_gamescope_active_ps_method_no_gamescope(self, monkeypatch, mocker):
         monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
         mocker.patch(
-            "subprocess.check_output", return_value="1234 ?    Sl     0:00 Xorg"
+            "subprocess.check_output",
+            side_effect=subprocess.CalledProcessError(1, "pgrep"),
         )
         assert EnvironmentHelper.is_gamescope_active() is False
 

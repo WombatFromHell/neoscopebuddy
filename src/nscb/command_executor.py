@@ -74,19 +74,21 @@ class CommandExecutor:
         return CommandExecutor.run_nonblocking(command, exports)
 
     @staticmethod
+    def _split_at_separator(args: ArgsList) -> tuple[ArgsList, ArgsList]:
+        """Split at '--' into (before, after); if absent, (args, [])."""
+        if "--" in args:
+            i = args.index("--")
+            return args[:i], args[i + 1 :]
+        return args, []
+
+    @staticmethod
     def _build_inactive_gamescope_command(
         args: ArgsList, pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is not active."""
         has_ld_preload = CommandExecutor._check_ld_preload_status()
 
-        try:
-            dash_index = args.index("--")
-            gamescope_args = args[:dash_index]
-            app_args = args[dash_index + 1 :]
-        except ValueError:
-            gamescope_args = args
-            app_args = []
+        gamescope_args, app_args = CommandExecutor._split_at_separator(args)
 
         gamescope_args = CommandExecutor._apply_framelimit(gamescope_args)
         gamescope_args = CommandExecutor._apply_auto_res(gamescope_args)
@@ -210,23 +212,18 @@ class CommandExecutor:
         args: ArgsList, pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is already active."""
-        has_ld_preload = CommandExecutor._check_ld_preload_status()
+        _, app_args = CommandExecutor._split_at_separator(args)
+        debug_log(f"_build_active_gamescope_command: app_args={app_args}")
 
-        try:
-            dash_index = args.index("--")
-            app_args = args[dash_index + 1 :]
-            debug_log(f"_build_active_gamescope_command: app_args={app_args}")
+        # ponytail: noop path runs inside an existing gamescope, so the
+        # session already inherits LD_PRELOAD — re-injecting would alter the
+        # launch env. Pass app args verbatim.
+        final_app_cmd = CommandExecutor._build_app_command(app_args)
 
-            final_app_cmd = CommandExecutor._build_final_app_command(
-                app_args, has_ld_preload
-            )
-
-            if not pre_cmd and not post_cmd:
-                return final_app_cmd
-            else:
-                return CommandExecutor.build_command([pre_cmd, final_app_cmd, post_cmd])
-        except ValueError:
-            return CommandExecutor.build_command([pre_cmd, post_cmd])
+        if not pre_cmd and not post_cmd:
+            return final_app_cmd
+        else:
+            return CommandExecutor.build_command([pre_cmd, final_app_cmd, post_cmd])
 
     @staticmethod
     def _build_final_app_command(app_args: ArgsList, has_ld_preload: bool) -> str:
@@ -238,7 +235,10 @@ class CommandExecutor:
         """
         if has_ld_preload:
             ld_preload_value = os.environ.get("LD_PRELOAD", "")
-            parts = ["env", f"LD_PRELOAD={shlex.quote(ld_preload_value)}"]
+            # ponytail: no inner shlex.quote — _build_app_command quotes the
+            # whole token once; double-quoting baked literal quotes into the
+            # value when it contained spaces/special chars.
+            parts = ["env", f"LD_PRELOAD={ld_preload_value}"]
         else:
             parts = []
         parts.extend(app_args)
@@ -285,12 +285,10 @@ class CommandExecutor:
         Applies NSCB_PRE_CMD / NSCB_POST_CMD consistently with the gamescope
         paths so condition-triggered fallback doesn't silently drop hooks.
         """
-        try:
-            dash_index = args.index("--")
-            app_args = args[dash_index + 1 :]
-        except ValueError:
+        if "--" not in args:
             debug_log("execute_bare: no '--' separator found")
             return 1
+        app_args = CommandExecutor._split_at_separator(args)[1]
 
         if not app_args:
             return 0

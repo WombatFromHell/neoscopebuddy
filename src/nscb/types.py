@@ -11,8 +11,7 @@ Type Aliases:
     ExitCode: Integer representing process exit codes
     ProfileArgsList: List of argument lists for multiple profiles
     CommandTuple: Tuple of two string commands (pre/post commands)
-    ArgsPair: Tuple of two argument lists (before/after separator)
-"""
+    """
 
 from typing import Dict, List, Optional, Tuple
 
@@ -35,9 +34,6 @@ ProfileArgsList = List[ArgsList]
 # Tuple type aliases for common patterns
 CommandTuple = Tuple[str, str]
 """Tuple representing pre and post command strings (e.g., ('pre_cmd', 'post_cmd'))."""
-
-ArgsPair = Tuple[ArgsList, ArgsList]
-"""Tuple representing arguments before and after separator (e.g., (gamescope_args, app_args))."""
 
 # Type aliases for method return types
 SplitResult = Tuple[ArgsList, ArgsList]

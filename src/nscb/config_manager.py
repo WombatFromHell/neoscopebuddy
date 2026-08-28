@@ -62,7 +62,7 @@ class ConfigManager:
                         )
 
                     if m := re.fullmatch(r"\[([^\]]+)\]", line):
-                        name = ConfigManager._strip_quotes_from_key(m.group(1).strip())
+                        name = ConfigManager._strip_quotes(m.group(1).strip())
                         if not ConfigManager._is_valid_profile_name(name):
                             raise InvalidConfigError(
                                 str(config_file),
@@ -87,9 +87,7 @@ class ConfigManager:
                         continue
 
                     if current:
-                        profiles[current].args = ConfigManager._sanitize_config_value(
-                            line
-                        )
+                        profiles[current].args = ConfigManager._strip_quotes(line)
                     elif "=" in line:
                         ConfigManager._process_profile_line(
                             line, line_num, str(config_file), profiles
@@ -137,7 +135,7 @@ class ConfigManager:
                 f"Invalid environment variable name: '{key}'",
             )
 
-        value = ConfigManager._sanitize_config_value(value.strip())
+        value = ConfigManager._strip_quotes(value.strip())
         exports[key] = value
 
     @staticmethod
@@ -154,33 +152,21 @@ class ConfigManager:
             profiles: Dictionary to store profile configurations
         """
         key, value = line.split("=", 1)
-        key = ConfigManager._strip_quotes_from_key(key.strip())
+        key = ConfigManager._strip_quotes(key.strip())
 
         ConfigManager._validate_and_store_profile(
             key, value.strip(), line_num, config_file, profiles
         )
 
     @staticmethod
-    def _strip_quotes_from_key(key: str) -> str:
-        """Strip quotes from key if present for backward compatibility."""
-        if not key:
-            return key
-
-        return ConfigManager._strip_quotes_from_key_if_quoted(key)
-
-    @staticmethod
-    def _strip_quotes_from_key_if_quoted(key: str) -> str:
-        """Strip quotes from key if it's quoted."""
-        if ConfigManager._is_key_quoted(key):
-            return key[1:-1].strip()
-        return key
-
-    @staticmethod
-    def _is_key_quoted(key: str) -> bool:
-        """Check if key is quoted with matching quotes."""
-        return (key.startswith('"') and key.endswith('"')) or (
-            key.startswith("'") and key.endswith("'")
-        )
+    def _strip_quotes(value: str) -> str:
+        """Strip one layer of matching " or ' quotes if present."""
+        if len(value) >= 2 and (
+            (value.startswith('"') and value.endswith('"'))
+            or (value.startswith("'") and value.endswith("'"))
+        ):
+            return value[1:-1]
+        return value
 
     @staticmethod
     def _validate_and_store_profile(
@@ -206,7 +192,7 @@ class ConfigManager:
         key: str, value: str, profiles: dict[str, ProfileEntry]
     ) -> None:
         """Sanitize value and store in profiles if valid."""
-        sanitized_value = ConfigManager._sanitize_config_value(value)
+        sanitized_value = ConfigManager._strip_quotes(value)
         if key:
             profiles[key] = ProfileEntry(args=sanitized_value)
 
@@ -226,14 +212,7 @@ class ConfigManager:
             - Prevents variable names that could cause issues
             - Follows standard environment variable naming conventions
         """
-        if not name:
-            return False
-
-        # Must start with letter or underscore
-        if not (name[0].isalpha() or name[0] == "_"):
-            return False
-
-        # Can only contain alphanumeric characters and underscores
+        # Alphanumeric + underscore, must start with a letter or underscore
         if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name):
             return False
 
@@ -274,37 +253,4 @@ class ConfigManager:
 
         return True
 
-    @staticmethod
-    def _sanitize_config_value(value: str) -> str:
-        """
-        Sanitize configuration values.
 
-        Args:
-            value: Configuration value to sanitize
-
-        Returns:
-            Sanitized value
-
-        Security:
-            - Strips matching quotes from values
-            - Handles edge cases
-        """
-        if not value:
-            return value
-
-        value = ConfigManager._strip_quotes_from_value(value)
-        return value
-
-    @staticmethod
-    def _strip_quotes_from_value(value: str) -> str:
-        """Strip quotes from value if present."""
-        if ConfigManager._is_value_quoted(value):
-            return value[1:-1]
-        return value
-
-    @staticmethod
-    def _is_value_quoted(value: str) -> bool:
-        """Check if value is quoted with matching quotes."""
-        return (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        )

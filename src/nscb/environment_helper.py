@@ -42,24 +42,22 @@ class EnvironmentHelper:
 
     @staticmethod
     def is_gamescope_active() -> bool:
-        """Determine if system runs under gamescope."""
-        # Check XDG_CURRENT_DESKTOP first (more reliable than ps check)
+        """Return True if a gamescope session is already running."""
         if os.environ.get("XDG_CURRENT_DESKTOP") == "gamescope":
             return True
-
+        # ponytail: pgrep -x matches the exact process name, replacing the
+        # brittle ps-text scan whose substring match could catch unrelated
+        # lines. pgrep exits 1 when nothing matches (reported as
+        # CalledProcessError); any other failure -> assume not active.
         try:
-            output = subprocess.check_output(
-                ["ps", "ax"], stderr=subprocess.STDOUT, text=True
+            subprocess.check_output(
+                ["pgrep", "-x", "gamescope"], stderr=subprocess.STDOUT
             )
-            # More precise checking for gamescope process
-            lines = output.split("\n")
-            for line in lines:
-                if "gamescope" in line and "grep" not in line:
-                    return True
+            return True
+        except subprocess.CalledProcessError:
+            return False
         except Exception:
-            pass
-
-        return False
+            return False
 
     @staticmethod
     def should_disable_ld_preload_wrap() -> bool:

@@ -225,6 +225,11 @@ export MANGOHUD=1
             "nscb.path_helper.PathHelper.get_config_path", return_value=config_path
         )
         mocker.patch("nscb.path_helper.PathHelper.executable_exists", return_value=True)
+        # Hermetic: assume no gamescope session so the launch path is exercised
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=False,
+        )
         mock_run = mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )

@@ -43,8 +43,10 @@ class TestSystemDetectorUnit:
         )
         assert SystemDetector.is_gamescope_active() is True
 
+        # pgrep finds no exact "gamescope" process
         mocker.patch(
-            "subprocess.check_output", return_value="1234 ?    Sl     0:00 Xorg"
+            "subprocess.check_output",
+            side_effect=subprocess.CalledProcessError(1, "pgrep"),
         )
         assert SystemDetector.is_gamescope_active() is False
 
@@ -156,7 +158,13 @@ class TestSystemDetectorEndToEnd:
 
         # Test with different value
         mocker.patch.dict("os.environ", {"XDG_CURRENT_DESKTOP": "GNOME"}, clear=True)
-        assert SystemDetector.is_gamescope_active() is False  # Will try ps method
+        # Hermetic: stub pgrep so the assertion doesn't depend on a real
+        # gamescope process being absent on the host.
+        mocker.patch(
+            "subprocess.check_output",
+            side_effect=subprocess.CalledProcessError(1, "pgrep"),
+        )
+        assert SystemDetector.is_gamescope_active() is False  # Will try pgrep
 
     def test_is_gamescope_active_ps_method_e2e(self, mocker):
         # Test fallback to ps command when XDG_CURRENT_DESKTOP is not gamescope
@@ -167,9 +175,10 @@ class TestSystemDetectorEndToEnd:
         )
         assert SystemDetector.is_gamescope_active() is True
 
-        # Test ps command shows non-gamescope process
+        # Test pgrep finds no exact "gamescope" process
         mocker.patch(
-            "subprocess.check_output", return_value="1234 ?    Sl     0:00 Xorg"
+            "subprocess.check_output",
+            side_effect=subprocess.CalledProcessError(1, "pgrep"),
         )
         assert SystemDetector.is_gamescope_active() is False
 
