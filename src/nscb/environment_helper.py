@@ -58,6 +58,16 @@ class EnvironmentHelper:
             return False
 
     @staticmethod
+    def force_nested() -> bool:
+        """Return True if NSCB_FORCE_NESTED=1 asks for a nested gamescope launch."""
+        return os.environ.get("NSCB_FORCE_NESTED", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+    @staticmethod
     def should_disable_ld_preload_wrap() -> bool:
         """Check if LD_PRELOAD wrapping should be disabled."""
         disable_var = os.environ.get("NSCB_DISABLE_LD_PRELOAD_WRAP", "").lower()

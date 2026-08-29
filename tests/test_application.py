@@ -28,6 +28,7 @@ class TestPrintHelp:
         assert "NSCB_DEBUG" in output
         assert "NSCB_DISABLE_LD_PRELOAD_WRAP" in output
         assert "re-injects LD_PRELOAD" in output
+        assert "NSCB_FORCE_NESTED" in output
         assert "Reserved names:" in output
         assert "NSCB_PRE_CMD" in output  # mentioned in ENVIRONMENT HOOKS section
 
@@ -1072,3 +1073,55 @@ class TestApplicationCondition:
         app.run(["-p", "gaming", "--", "mygame"])
 
         mock_bare.assert_called_once()
+
+    def test_condition_gamescope_active_force_nested_launches_nested(
+        self, mocker, monkeypatch
+    ):
+        """gamescope active + NSCB_FORCE_NESTED=1 still launches a nested session."""
+        from nscb.config_result import ConfigResult, ProfileEntry
+
+        mock_config_result = ConfigResult(
+            {
+                "gaming": ProfileEntry(
+                    "-f -W 1920",
+                    gamescope_condition="env:XDG_CURRENT_DESKTOP=niri",
+                )
+            },
+            {},
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=Path("/fake/config"),
+        )
+        mocker.patch(
+            "nscb.config_manager.ConfigManager.load_config",
+            return_value=mock_config_result,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.find_executable",
+            return_value=True,
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            return_value=True,
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.evaluate_condition",
+            return_value=True,
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        mocker.patch("builtins.print")
+        mock_bare = mocker.patch(
+            "nscb.command_executor.CommandExecutor.execute_bare", return_value=0
+        )
+        monkeypatch.setenv("NSCB_FORCE_NESTED", "1")
+
+        app = Application()
+        result = app.run(["-p", "gaming", "--", "mygame"])
+
+        assert result == 0
+        mock_bare.assert_not_called()
+        call_args = mock_run.call_args[0][0]
+        assert "gamescope" in call_args

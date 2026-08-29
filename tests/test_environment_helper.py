@@ -133,6 +133,30 @@ class TestEnvironmentHelperUnit:
         result = EnvironmentHelper.should_disable_ld_preload_wrap()
         assert result == expected
 
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("1", True),
+            ("true", True),
+            ("yes", True),
+            ("on", True),
+            ("0", False),
+            ("false", False),
+            ("no", False),
+            ("off", False),
+            ("other", False),
+            ("", False),
+        ],
+    )
+    def test_force_nested_with_env_var(self, monkeypatch, value, expected):
+        if value:
+            monkeypatch.setenv("NSCB_FORCE_NESTED", value)
+        else:
+            monkeypatch.delenv("NSCB_FORCE_NESTED", raising=False)
+
+        result = EnvironmentHelper.force_nested()
+        assert result == expected
+
     def test_should_disable_ld_preload_wrap_with_faugus_log(self, monkeypatch):
         # Save original values
         original_faugus_log = os.environ.get("FAUGUS_LOG")

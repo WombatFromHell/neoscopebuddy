@@ -370,6 +370,37 @@ class TestCommandExecutorEndToEnd:
         assert not re.search(r"-f(\s|;|$)", call_args)
         assert result == 0  # Should return exit code
 
+    def test_execute_gamescope_command_force_nested_under_gamescope(
+        self, mocker, monkeypatch
+    ):
+        """NSCB_FORCE_NESTED=1 launches a nested gamescope even when one is active."""
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.get_env_commands",
+            return_value=("", ""),
+        )
+        mocker.patch(
+            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+        )
+        mocker.patch(
+            "nscb.command_executor.CommandExecutor.build_command",
+            side_effect=lambda x: " ".join(filter(None, x)),
+        )
+        mock_run = mocker.patch(
+            "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
+        )
+        monkeypatch.setenv("NSCB_FORCE_NESTED", "1")
+        monkeypatch.delenv("LD_PRELOAD", raising=False)
+        monkeypatch.delenv("NSCB_FRAMELIMIT", raising=False)
+
+        final_args = ["-f", "-W", "1920", "--", "mygame.exe"]
+        result = CommandExecutor.execute_gamescope_command(final_args)
+
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "gamescope" in call_args
+        assert "mygame.exe" in call_args
+        assert result == 0
+
     def test_execute_gamescope_command_with_pre_post_commands(self, mocker):
         mocker.patch(
             "nscb.command_executor.CommandExecutor.get_env_commands",

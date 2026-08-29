@@ -8,6 +8,7 @@ from typing import Optional
 
 from .command_executor import CommandExecutor
 from .config_manager import ConfigManager
+from .environment_helper import EnvironmentHelper
 from .exceptions import ConfigNotFoundError, NscbError, ProfileNotFoundError
 from .profile_manager import ProfileManager
 from .system_detector import SystemDetector
@@ -84,8 +85,11 @@ ENVIRONMENT HOOKS (optional)
                                       profile or explicit -r (ignored when gamescope
                                       is already active)
   NSCB_AUTO_RES=<0|1|true|false>     Auto-inject -W/-H from the active display
-                                      (niri/KDE). On by default when no -w/-h/-W/-H
-                                      flag is given; explicit flags always win
+                                       (niri/KDE). On by default when no -w/-h/-W/-H
+                                       flag is given; explicit flags always win
+  NSCB_FORCE_NESTED=1                Force launching a nested gamescope even when one
+                                       is already active (default: stay inside the
+                                       existing session)
           """
     )
 
@@ -136,7 +140,11 @@ class Application:
 
         # gamescope_condition only applies to the initial launch decision —
         # once gamescope is active we're already committed to running inside it
-        if gamescope_condition is not None and not SystemDetector.is_gamescope_active():
+        # (unless NSCB_FORCE_NESTED overrides us into launching a nested session)
+        if gamescope_condition is not None and not (
+            SystemDetector.is_gamescope_active()
+            and not EnvironmentHelper.force_nested()
+        ):
             if not self.command_executor.evaluate_condition(gamescope_condition):
                 return self.command_executor.execute_bare(final_args, exports)
 

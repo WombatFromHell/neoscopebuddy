@@ -50,7 +50,10 @@ class CommandExecutor:
 
         pre_cmd, post_cmd = CommandExecutor.get_env_commands()
 
-        gamescope_active = SystemDetector.is_gamescope_active()
+        gamescope_active = (
+            SystemDetector.is_gamescope_active()
+            and not EnvironmentHelper.force_nested()
+        )
         debug_log(f"execute_gamescope_command: gamescope is active: {gamescope_active}")
 
         if gamescope_active:
