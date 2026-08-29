@@ -46,4 +46,3 @@ class InvalidConfigError(NscbError):
         super().__init__(full_message)
         self.path = path
         self.line_num = line_num
-

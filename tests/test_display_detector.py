@@ -42,6 +42,7 @@ KDE_OUT = {
 @pytest.fixture
 def niri_env(monkeypatch):
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "niri")
+    monkeypatch.delenv("XDG_SESSION_DESKTOP", raising=False)
     monkeypatch.delenv("KDE_FULL_SESSION", raising=False)
 
 
@@ -49,6 +50,14 @@ def niri_env(monkeypatch):
 def kde_env(monkeypatch):
     monkeypatch.setenv("KDE_FULL_SESSION", "1")
     monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+    monkeypatch.delenv("XDG_SESSION_DESKTOP", raising=False)
+
+
+@pytest.fixture
+def hyprland_env(monkeypatch):
+    monkeypatch.setenv("XDG_SESSION_DESKTOP", "Hyprland")
+    monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+    monkeypatch.delenv("KDE_FULL_SESSION", raising=False)
 
 
 class TestBackendDetection:
@@ -64,9 +73,16 @@ class TestBackendDetection:
 
     def test_no_backend(self, monkeypatch, mocker):
         monkeypatch.delenv("XDG_CURRENT_DESKTOP", raising=False)
+        monkeypatch.delenv("XDG_SESSION_DESKTOP", raising=False)
         monkeypatch.delenv("KDE_FULL_SESSION", raising=False)
         mocker.patch("nscb.display_detector.shutil.which", return_value=None)
         assert DisplayDetector.detect_backend() == "none"
+
+    def test_hyprland_backend(self, hyprland_env, mocker):
+        mocker.patch(
+            "nscb.display_detector.shutil.which", return_value="/usr/bin/hyprctl"
+        )
+        assert DisplayDetector.detect_backend() == "hyprland"
 
 
 class TestNiriResolution:
@@ -96,6 +112,64 @@ class TestKdeResolution:
         )
         mocker.patch("subprocess.check_output", return_value=json.dumps(KDE_OUT))
         assert DisplayDetector.get_resolution() == (2560, 1440)
+
+
+HYPR_MONS = [
+    {
+        "name": "DP-1",
+        "width": 3440,
+        "height": 1440,
+        "scale": 1,
+        "disabled": False,
+        "focusedMonitor": True,
+    },
+    {
+        "name": "HDMI-A-1",
+        "width": 1920,
+        "height": 1080,
+        "scale": 1,
+        "disabled": False,
+    },
+]
+
+
+class TestHyprlandResolution:
+    def test_primary_picks_focused(self, hyprland_env, mocker):
+        mocker.patch(
+            "nscb.display_detector.shutil.which", return_value="/usr/bin/hyprctl"
+        )
+        mocker.patch("subprocess.check_output", return_value=json.dumps(HYPR_MONS))
+        assert DisplayDetector.get_resolution() == (3440, 1440)
+
+    def test_prefer_output(self, hyprland_env, mocker):
+        mocker.patch(
+            "nscb.display_detector.shutil.which", return_value="/usr/bin/hyprctl"
+        )
+        mocker.patch("subprocess.check_output", return_value=json.dumps(HYPR_MONS))
+        assert DisplayDetector.get_resolution("HDMI-A-1") == (1920, 1080)
+
+    def test_skips_disabled(self, hyprland_env, mocker):
+        mocker.patch(
+            "nscb.display_detector.shutil.which", return_value="/usr/bin/hyprctl"
+        )
+        mons = [dict(HYPR_MONS[0], disabled=True), HYPR_MONS[1]]
+        mocker.patch("subprocess.check_output", return_value=json.dumps(mons))
+        assert DisplayDetector.get_resolution() == (1920, 1080)
+
+    def test_scale_divides_to_logical(self, hyprland_env, mocker):
+        mocker.patch(
+            "nscb.display_detector.shutil.which", return_value="/usr/bin/hyprctl"
+        )
+        mons = [dict(HYPR_MONS[0], width=5120, height=2880, scale=2.0)]
+        mocker.patch("subprocess.check_output", return_value=json.dumps(mons))
+        assert DisplayDetector.get_resolution() == (2560, 1440)
+
+    def test_subprocess_failure_returns_none(self, hyprland_env, mocker):
+        mocker.patch(
+            "nscb.display_detector.shutil.which", return_value="/usr/bin/hyprctl"
+        )
+        mocker.patch("subprocess.check_output", side_effect=FileNotFoundError)
+        assert DisplayDetector.get_resolution() is None
 
 
 class TestArgumentHelpers:

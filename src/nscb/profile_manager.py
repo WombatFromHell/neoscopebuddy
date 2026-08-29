@@ -91,15 +91,23 @@ class ProfileManager:
             ProfileManager._canon("--backend"),
         }
         profile_conflicts, profile_nonconflicts = (
-            ProfileManager._classify_flags_by_conflict(profile_flags, conflict_canon_set)
+            ProfileManager._classify_flags_by_conflict(
+                profile_flags, conflict_canon_set
+            )
         )
         override_conflicts, override_nonconflicts = (
-            ProfileManager._classify_flags_by_conflict(override_flags, conflict_canon_set)
+            ProfileManager._classify_flags_by_conflict(
+                override_flags, conflict_canon_set
+            )
         )
         # Conflicts: override takes precedence
-        final_conflicts = override_conflicts if override_conflicts else profile_conflicts
+        final_conflicts = (
+            override_conflicts if override_conflicts else profile_conflicts
+        )
         # Non-conflicts: drop profile flags the override also set
-        override_canon_set = {ProfileManager._canon(f[0]) for f in override_nonconflicts}
+        override_canon_set = {
+            ProfileManager._canon(f[0]) for f in override_nonconflicts
+        }
         final_nonconflicts = [
             f
             for f in profile_nonconflicts

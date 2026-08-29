@@ -1,7 +1,8 @@
 """Auto-detect the active display resolution for NSCB_AUTO_RES.
 
 Uses stdlib json + subprocess (no jq dependency). Supports niri
-(`niri msg --json outputs`) and KDE (`kscreen-doctor -j`).
+(`niri msg --json outputs`), KDE (`kscreen-doctor -j`), and Hyprland
+(`hyprctl monitors -j`).
 """
 
 import json
@@ -29,6 +30,10 @@ class DisplayDetector:
 
     @staticmethod
     def detect_backend() -> str:
+        if os.environ.get("XDG_SESSION_DESKTOP") == "Hyprland" and shutil.which(
+            "hyprctl"
+        ):
+            return "hyprland"
         if os.environ.get("XDG_CURRENT_DESKTOP") == "niri" and shutil.which("niri"):
             return "niri"
         if os.environ.get("KDE_FULL_SESSION") and shutil.which("kscreen-doctor"):
@@ -38,6 +43,8 @@ class DisplayDetector:
     @staticmethod
     def get_resolution(prefer: str | None = None) -> tuple[int, int] | None:
         backend = DisplayDetector.detect_backend()
+        if backend == "hyprland":
+            return DisplayDetector._hyprland(prefer)
         if backend == "niri":
             return DisplayDetector._niri(prefer)
         if backend == "kde":
@@ -106,6 +113,30 @@ class DisplayDetector:
         if mode is None:
             return None
         return mode["size"]["width"], mode["size"]["height"]
+
+    @staticmethod
+    def _hyprland(prefer: str | None) -> tuple[int, int] | None:
+        try:
+            data = json.loads(
+                subprocess.check_output(["hyprctl", "monitors", "-j"], text=True)
+            )
+        except Exception:
+            return None
+        if not isinstance(data, list):
+            return None
+        disp = DisplayDetector._pick(
+            data,
+            prefer,
+            lambda o: not o.get("disabled", False),
+            lambda o: 0 if o.get("focusedMonitor") else 1,
+        )
+        if disp is None:
+            return None
+        scale = float(disp.get("scale", 1.0)) or 1.0
+        # ponytail: hyprctl monitors -j reports physical px (REFACTOR
+        # findings); divide by scale for the logical dims gamescope -W/-H
+        # expect. Drop this division if a future hyprctl reports logical (REFACTOR open #5).
+        return int(disp["width"] / scale), int(disp["height"] / scale)
 
     @staticmethod
     def _pick(items, prefer, enabled_fn, sort_key):

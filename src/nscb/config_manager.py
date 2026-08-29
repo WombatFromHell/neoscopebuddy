@@ -151,7 +151,9 @@ class ConfigManager:
                 config_file, line_num, f"Invalid profile name: '{key}'"
             )
         if key:
-            profiles[key] = ProfileEntry(args=ConfigManager._strip_quotes(value.strip()))
+            profiles[key] = ProfileEntry(
+                args=ConfigManager._strip_quotes(value.strip())
+            )
 
     @staticmethod
     def _strip_quotes(value: str) -> str:
@@ -219,5 +221,3 @@ class ConfigManager:
             return False
 
         return True
-
-

@@ -10,7 +10,7 @@ Type Aliases:
     EnvExports: Dictionary mapping environment variable names to values
     ExitCode: Integer representing process exit codes
     ProfileArgsList: List of argument lists for multiple profiles
-    """
+"""
 
 from typing import Dict, List, Optional, Tuple
 
