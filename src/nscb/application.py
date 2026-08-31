@@ -2,13 +2,14 @@
 """Main application orchestrator for NeoscopeBuddy."""
 
 import logging
+import os
 import shlex
 import sys
 from typing import Optional
 
 from .command_executor import CommandExecutor
 from .config_manager import ConfigManager
-from .environment_helper import EnvironmentHelper
+from .environment_helper import EnvironmentHelper, debug_log
 from .exceptions import ConfigNotFoundError, NscbError, ProfileNotFoundError
 from .profile_manager import ProfileManager
 from .system_detector import SystemDetector
@@ -111,6 +112,10 @@ class Application:
 
     def run(self, args: ArgsList) -> ExitCode:
         """Run the application with the given arguments."""
+        # ponytail: always capture saved LD_PRELOAD when NSCB_DEBUG=1, even for --help (which bypasses execute path).
+        debug_log(
+            f"startup: argv={args!r} NSCB_ORIG_LD_PRELOAD={os.environ.get('NSCB_ORIG_LD_PRELOAD')!r} LD_PRELOAD={os.environ.get('LD_PRELOAD')!r} NSCB_ORIG_LD_LIBRARY_PATH={os.environ.get('NSCB_ORIG_LD_LIBRARY_PATH')!r} LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH')!r}"
+        )
         # Handle help request
         if not args or "--help" in args:
             print_help()

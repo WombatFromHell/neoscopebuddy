@@ -41,6 +41,10 @@ class CommandExecutor:
         final_args: ArgsList, exports: EnvExports | None = None
     ) -> ExitCode:
         """Execute gamescope command with proper handling and return exit code."""
+        # ponytail: capture saved LD_PRELOAD/LD_LIBRARY_PATH early so NSCB_DEBUG=1 always shows what the shim saved, even when gamescope is already active (which skips _check).
+        debug_log(
+            f"execute_gamescope_command: saved LD_PRELOAD NSCB_ORIG_LD_PRELOAD={os.environ.get('NSCB_ORIG_LD_PRELOAD')!r} LD_PRELOAD={os.environ.get('LD_PRELOAD')!r} NSCB_ORIG_LD_LIBRARY_PATH={os.environ.get('NSCB_ORIG_LD_LIBRARY_PATH')!r} LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH')!r}"
+        )
         debug_log(
             f"execute_gamescope_command: final_args={final_args}, exports={exports}"
         )
@@ -180,9 +184,19 @@ class CommandExecutor:
             f"_check_ld_preload_status: LD_PRELOAD wrapping disabled: {disable_ld_preload_wrap}"
         )
 
-        original_ld_preload = os.environ.get("LD_PRELOAD")
+        # ponytail: read NSCB_ORIG_LD_PRELOAD first (polyglot shim saved value); fallback to
+        # live env for dev/test without shim. LD_LIBRARY_PATH is intentionally not
+        # handled here — it is passthrough for Heroic mounts and would falsely trigger
+        # LD_PRELOAD handling when only LD_LIBRARY_PATH is set.
+        raw_orig_preload = os.environ.get("NSCB_ORIG_LD_PRELOAD")
+        raw_live_preload = os.environ.get("LD_PRELOAD")
+        original_ld_preload = raw_orig_preload or raw_live_preload
         debug_log(
-            f"_check_ld_preload_status: Original LD_PRELOAD value: {original_ld_preload}"
+            f"_check_ld_preload_status: NSCB_ORIG_LD_PRELOAD={raw_orig_preload!r} LD_PRELOAD={raw_live_preload!r} -> effective LD_PRELOAD={original_ld_preload!r}"
+        )
+        # still log LD_LIBRARY_PATH for visibility when NSCB_DEBUG=1, but don't use for decision
+        debug_log(
+            f"_check_ld_preload_status: NSCB_ORIG_LD_LIBRARY_PATH={os.environ.get('NSCB_ORIG_LD_LIBRARY_PATH')!r} LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH')!r} (passthrough, not for has_ld_preload)"
         )
 
         has_ld_preload = bool(original_ld_preload) and not disable_ld_preload_wrap
@@ -230,11 +244,15 @@ class CommandExecutor:
         to gamescope too, not just the app.
         """
         if has_ld_preload:
-            ld_preload_value = os.environ.get("LD_PRELOAD", "")
-            # ponytail: no inner shlex.quote — _build_app_command quotes the
-            # whole token once; double-quoting baked literal quotes into the
-            # value when it contained spaces/special chars.
-            parts = ["env", f"LD_PRELOAD={ld_preload_value}"]
+            # ponytail: read NSCB_ORIG_LD_PRELOAD first (polyglot shim); fallback to live env.
+            # no inner shlex.quote — _build_app_command quotes the whole token once.
+            # LD_LIBRARY_PATH is passthrough — don't re-inject under LD_PRELOAD flag.
+            val = (
+                os.environ.get("NSCB_ORIG_LD_PRELOAD")
+                or os.environ.get("LD_PRELOAD")
+                or ""
+            )
+            parts: ArgsList = ["env", f"LD_PRELOAD={val}"] if val else []
         else:
             parts = []
         parts.extend(app_args)

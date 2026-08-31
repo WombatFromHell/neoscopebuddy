@@ -75,6 +75,7 @@
           mkdir -p $out
           cp -r ${./src} staging
           chmod -R u+w staging
+          rm -f staging/polyglot.sh
           sed -i 's/^__version__ = .*/__version__ = "${version}"/' \
             "staging/nscb/application.py"
           cp -r staging/* $out/
@@ -96,6 +97,7 @@
         buildPhase = ''
           mkdir -p staging
           cp -r ${src}/* staging
+          rm -f staging/polyglot.sh
 
           # Create __main__.py entry point
           echo "from entry import main; main()" > staging/__main__.py
@@ -107,17 +109,15 @@
           # Build deterministic zip: sorted file list, no extra attributes (-X)
           (cd staging && find . \( -type d -o -type f \) | LC_ALL=C sort | zip -X -q -@ archive.zip)
 
-          # Prepend shebang to create executable pyz.
-          # Absolute FHS path (/usr/bin/python3): /usr/bin/env python3 resolves to
-          # a nix python missing host libGL.so.1. Must match the Makefile shebang
-          # for bitwise reproducibility.
-          echo '#!/usr/bin/python3' > $out
+          # Prepend polyglot shim (valid sh + valid python) — must match Makefile.
+          cat ${./src/polyglot.sh} > $out
           cat staging/archive.zip >> $out
           chmod +x $out
         '';
 
         dontUnpack = true;
         dontInstall = true;
+        dontPatchShebangs = true;
       };
   in {
     packages = forAllSystems (system: {

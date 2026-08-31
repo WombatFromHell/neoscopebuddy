@@ -43,6 +43,8 @@ build: clean
 	rm -rf $(BUILD_DIR)/staging
 	mkdir -p $(BUILD_DIR)/staging
 	cp -r $(SRC_DIR)/* $(BUILD_DIR)/staging/
+	# Shim is prepended, not bundled inside the zip
+	rm -f $(BUILD_DIR)/staging/polyglot.sh
 
 	# Inject version into staging copy of application.py (not source)
 	sed -i 's/^__version__ = .*/__version__ = "$(VERSION)"/' $(BUILD_DIR)/staging/nscb/application.py
@@ -63,8 +65,8 @@ build: clean
 		find . \( -type d -o -type f \) | LC_ALL=C sort | \
 		zip -X -q -@ ../archive.zip
 
-	# Prepend shebang to create executable pyz
-	echo '#!/usr/bin/python3' > $(OUT)
+	# Prepend polyglot shim to create executable pyz (shim is valid sh + valid python)
+	cat $(SRC_DIR)/polyglot.sh > $(OUT)
 	cat $(BUILD_DIR)/archive.zip >> $(OUT)
 	chmod +x $(OUT)
 
@@ -85,9 +87,9 @@ install: $(OUT)
 		mkdir -p "$$HOME/.local/bin"; \
 		INSTALL_DIR="$$HOME/.local/bin"; \
 	fi; \
-	cp -f $(OUT) $(OUT).sha256sum "$$INSTALL_DIR/"; \
-	chmod +x "$$INSTALL_DIR/$(ARTIFACT)"; \
-	ln -sf "$$INSTALL_DIR/$(ARTIFACT)" "$$HOME/.local/bin/nscb"; \
+	install -m 0755 $(OUT) "$$INSTALL_DIR/"; \
+	install -m 0644 $(OUT).sha256sum "$$INSTALL_DIR"; \
+	ln -sfn "$$INSTALL_DIR/$(ARTIFACT)" "$$HOME/.local/bin/nscb"; \
 	echo "Installed to $$INSTALL_DIR/$(ARTIFACT)"
 
 test:

@@ -783,9 +783,10 @@ class TestCommandExecutorEndToEnd:
         mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]  # Get the command string argument
 
-        # Should include env -u LD_PRELOAD for gamescope and preserve LD_PRELOAD for app
+        # Should include env -u LD_PRELOAD for gamescope and preserve LD_PRELOAD for app (LD_LIBRARY_PATH is passthrough)
         assert "env -u LD_PRELOAD gamescope" in call_args
         assert "env LD_PRELOAD=/path/to/library.so testapp" in call_args
+        assert "-u LD_LIBRARY_PATH" not in call_args
 
         assert result == 0
 

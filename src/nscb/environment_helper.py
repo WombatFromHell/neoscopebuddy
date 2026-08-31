@@ -7,8 +7,17 @@ import sys
 
 def debug_log(message: str) -> None:
     """Log debug message when NSCB_DEBUG=1 is set."""
-    if os.environ.get("NSCB_DEBUG", "").lower() in ("1", "true", "yes", "on"):
-        print(f"[DEBUG] {message}", file=sys.stderr, flush=True)
+    if os.environ.get("NSCB_DEBUG", "").lower() not in ("1", "true", "yes", "on"):
+        return
+    line = f"[DEBUG] {message}"
+    print(line, file=sys.stderr, flush=True)
+    # ponytail: also persist to $XDG_RUNTIME_DIR/nscb.log (fallback to /tmp like polyglot.sh); best-effort, never fails.
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    try:
+        with open(os.path.join(runtime, "nscb.log"), "a") as f:
+            print(line, file=f, flush=True)
+    except Exception:
+        pass
 
 
 class EnvironmentHelper:
