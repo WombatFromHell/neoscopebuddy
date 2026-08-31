@@ -2,15 +2,13 @@
 
 from dataclasses import dataclass, field
 
-from .types import EnvExports
-
 
 @dataclass
 class ProfileEntry:
     """A profile's args and per-profile environment exports."""
 
     args: str
-    exports: EnvExports = field(default_factory=dict)
+    exports: dict[str, str] = field(default_factory=dict)
     gamescope_condition: str | None = None
 
 
@@ -19,4 +17,4 @@ class ConfigResult:
     """Class to hold both profile configurations and environment exports."""
 
     profiles: dict[str, ProfileEntry]
-    exports: EnvExports
+    exports: dict[str, str]

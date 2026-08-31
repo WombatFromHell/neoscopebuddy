@@ -13,70 +13,57 @@ graph TD
     entry["entry.py<br/><i>entry point</i>"]
     application["application.py<br/><i>orchestrator</i>"]
     command_executor["command_executor.py<br/><i>command building &amp; execution</i>"]
+    display_detector["display_detector.py<br/><i>display resolution</i>"]
     config_manager["config_manager.py<br/><i>config parsing</i>"]
     config_result["config_result.py<br/><i>dataclasses</i>"]
     profile_manager["profile_manager.py<br/><i>profile parsing &amp; merging</i>"]
     argument_processor["argument_processor.py<br/><i>flag/positional splitting</i>"]
-    system_detector["system_detector.py<br/><i>gamescope detection</i>"]
     environment_helper["environment_helper.py<br/><i>env vars &amp; debug</i>"]
-    path_helper["path_helper.py<br/><i>XDG paths &amp; shutil</i>"]
     gamescope_args["gamescope_args.py<br/><i>short→long map</i>"]
-    types["types.py<br/><i>type aliases</i>"]
     exceptions["exceptions.py<br/><i>exception hierarchy</i>"]
 
     entry --> application
     application --> command_executor
     application --> config_manager
     application --> profile_manager
-    application --> system_detector
     application --> exceptions
-    application --> types
+    application --> environment_helper
 
     command_executor --> environment_helper
-    command_executor --> system_detector
     command_executor --> argument_processor
-    command_executor --> types
+    command_executor --> display_detector
 
     config_manager --> config_result
-    config_manager --> path_helper
     config_manager --> exceptions
-    config_manager --> types
 
     profile_manager --> gamescope_args
-    profile_manager --> types
-    profile_manager -. "lazy import" .-> argument_processor
+    profile_manager --> argument_processor
 
-    system_detector --> environment_helper
-    system_detector --> path_helper
-
-    config_result --> types
-    environment_helper --> types
-
-    style types fill:#9f9,stroke:#6b6
+    style environment_helper fill:#9f9,stroke:#6b6
     style exceptions fill:#9f9,stroke:#6b6
-    style path_helper fill:#9f9,stroke:#6b6
     style gamescope_args fill:#9f9,stroke:#6b6
+    style display_detector fill:#9f9,stroke:#6b6
     style argument_processor fill:#9f9,stroke:#6b6
     style config_result fill:#9f9,stroke:#6b6
 ```
 
 ### Module Responsibilities
 
-| Module                  | Role                                                            | Key exports                                 |
-| ----------------------- | --------------------------------------------------------------- | ------------------------------------------- |
-| `entry.py`              | Zipapp entry point, calls `main()`                              | `main()`                                    |
-| `application.py`        | Orchestrator: parse args → load config → merge → execute        | `Application`, `print_help()`, `main()`     |
-| `profile_manager.py`    | Profile arg parsing, flag merging with conflict resolution      | `ProfileManager`                            |
-| `config_manager.py`     | XDG-aware config loading, section + flat format, validation     | `ConfigManager`                             |
-| `config_result.py`      | Dataclasses for config output                                   | `ConfigResult`, `ProfileEntry`              |
-| `argument_processor.py` | `--` separator splitting, flag vs positional classification     | `ArgumentProcessor`                         |
-| `command_executor.py`   | Command assembly, LD_PRELOAD handling, subprocess execution     | `CommandExecutor`                           |
-| `system_detector.py`    | Thin pass-through to EnvironmentHelper + PathHelper (mock seam) | `SystemDetector`                            |
-| `environment_helper.py` | `NSCB_*` env vars, gamescope detection, debug logging           | `EnvironmentHelper`, `debug_log()`          |
-| `path_helper.py`        | XDG config path resolution, `shutil.which` wrapper              | `PathHelper`                                |
-| `gamescope_args.py`     | Short-to-long flag mapping for conflict canonicalization        | `GAMESCOPE_ARGS_MAP`                        |
-| `types.py`              | Shared type aliases                                             | `ArgsList`, `FlagTuple`, `EnvExports`, etc. |
-| `exceptions.py`         | Exception hierarchy with structured attributes                  | `NscbError` + 3 subclasses                  |
+| Module                  | Role                                                        | Key exports                             |
+| ----------------------- | ----------------------------------------------------------- | --------------------------------------- |
+| `entry.py`              | Zipapp entry point, calls `main()`                          | `main()`                                |
+| `application.py`        | Orchestrator: parse args → load config → merge → execute    | `Application`, `print_help()`, `main()` |
+| `profile_manager.py`    | Profile arg parsing, flag merging with conflict resolution  | `ProfileManager`                        |
+| `config_manager.py`     | XDG-aware config loading, section + flat format, validation | `ConfigManager`                         |
+| `config_result.py`      | Dataclasses for config output                               | `ConfigResult`, `ProfileEntry`          |
+| `argument_processor.py` | `--` separator splitting, flag vs positional classification | `ArgumentProcessor`                     |
+| `command_executor.py`   | Command assembly, LD_PRELOAD handling, subprocess execution | `CommandExecutor`                       |
+| `environment_helper.py` | `NSCB_*` env vars, gamescope detection, debug logging       | `EnvironmentHelper`, `debug_log()`      |
+| `display_detector.py`   | Active display geometry (niri/KDE) for auto-resolution      | `DisplayDetector`                       |
+| `gamescope_args.py`     | Short-to-long flag mapping for conflict canonicalization    | `GAMESCOPE_ARGS_MAP`                    |
+| `exceptions.py`         | Exception hierarchy with structured attributes              | `NscbError` + 3 subclasses              |
+
+Type aliases are inlined: built-in generics (`list[str]`, `dict[str, str]`, `tuple[str, str | None]`) are used directly.
 
 ## Runtime Call Graph
 
@@ -92,6 +79,7 @@ graph TD
         B["Application.run(args)"]
         C["Application._process_profiles(profiles, args)"]
         D["print_help()"]
+        W["shutil.which('gamescope')"]
     end
 
     subgraph "profile_manager.py"
@@ -116,11 +104,6 @@ graph TD
         N["build_command(parts)"]
     end
 
-    subgraph "system_detector.py"
-        O["find_executable(name)"]
-        P["is_gamescope_active()"]
-    end
-
     subgraph "environment_helper.py"
         Q["get_pre_post_commands()"]
         R["is_gamescope_active()"]
@@ -128,14 +111,9 @@ graph TD
         T["debug_log(msg)"]
     end
 
-    subgraph "path_helper.py"
-        U["get_config_path()"]
-        V["executable_exists(name)"]
-    end
-
     A --> B
     B --> D
-    B --> O
+    B --> W
     B --> E
     B --> C
     B --> L
@@ -149,14 +127,10 @@ graph TD
     G -.-> I
 
     L --> Q
-    L --> P
+    L --> R
     L --> N
     L --> M
     L --> T
-
-    J --> U
-    O --> V
-    P --> R
 
     M -. "subprocess.run" .-> M2["subprocess.run"]
     R -. "subprocess.check_output" .-> R2["pgrep -x gamescope"]
@@ -297,11 +271,9 @@ src/
     ├── config_result.py   # ConfigResult, ProfileEntry dataclasses
     ├── argument_processor.py # -- separator & flag/positional splitting
     ├── command_executor.py  # Command building & subprocess execution
-    ├── system_detector.py   # Gamescope detection (mock seam)
-    ├── path_helper.py       # XDG paths, shutil.which
+    ├── display_detector.py  # Display geometry for auto-resolution
     ├── environment_helper.py # NSCB_* env vars, debug_log
     ├── gamescope_args.py    # GAMESCOPE_ARGS_MAP
-    ├── types.py             # Type aliases
     └── exceptions.py        # NscbError hierarchy
 ```
 
@@ -361,17 +333,9 @@ graph TD
     style NscbError fill:#f96,stroke:#c66
 ```
 
-## Type Aliases
+## Types
 
-| Alias             | Definition                         | Used by                                       |
-| ----------------- | ---------------------------------- | --------------------------------------------- |
-| `ArgsList`        | `List[str]`                        | everywhere                                    |
-| `FlagTuple`       | `Tuple[str, Optional[str]]`        | profile_manager, argument_processor           |
-| `EnvExports`      | `Dict[str, str]`                   | application, config_manager, command_executor |
-| `ExitCode`        | `int`                              | application, command_executor                 |
-| `ProfileArgsList` | `List[ArgsList]`                   | profile_manager                               |
-| `SplitResult`     | `Tuple[ArgsList, ArgsList]`        | argument_processor                            |
-| `SeparatedArgs`   | `Tuple[List[FlagTuple], ArgsList]` | argument_processor                            |
+No shared alias module: signatures use built-in generics directly (`list[str]`, `dict[str, str]`, `tuple[str, str | None]`).
 
 ## Build System
 

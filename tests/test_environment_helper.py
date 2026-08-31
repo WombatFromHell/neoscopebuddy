@@ -8,7 +8,6 @@ import pytest
 from nscb.application import Application
 from nscb.command_executor import CommandExecutor
 from nscb.environment_helper import EnvironmentHelper, debug_log
-from nscb.system_detector import SystemDetector
 
 
 class TestEnvironmentHelperUnit:
@@ -227,12 +226,10 @@ class TestEnvironmentHelperUnit:
 class TestEnvironmentHelperIntegration:
     """Integration tests for EnvironmentHelper with other modules."""
 
-    def test_environment_helper_system_detector_integration(self, mocker):
-        """Test that EnvironmentHelper and SystemDetector share gamescope detection logic."""
-        # Both modules should be able to detect gamescope
+    def test_environment_helper_gamescope_detection(self, mocker):
+        """Test EnvironmentHelper gamescope detection."""
         mocker.patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "gamescope"}, clear=True)
         assert EnvironmentHelper.is_gamescope_active() is True
-        assert SystemDetector.is_gamescope_active() is True
 
     def test_environment_helper_command_executor_integration(self, mocker):
         """Test EnvironmentHelper working with CommandExecutor for pre/post commands."""
@@ -280,11 +277,10 @@ class TestEnvironmentHelperIntegration:
 
         # Mock required components
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mock_run = mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
@@ -311,14 +307,13 @@ class TestEnvironmentHelperEndToEnd:
         mocker.patch.dict(
             "os.environ", {"NSCB_PRE_CMD": "before_cmd", "NSCB_POST_CMD": "after_cmd"}
         )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
-        )
-        mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mock_run = mocker.patch(
@@ -417,14 +412,13 @@ class TestEnvironmentHelperEndToEnd:
         mocker.patch.dict(
             "os.environ", {"NSCB_PRE_CMD": "before", "NSCB_POST_CMD": "after"}
         )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
-        )
-        mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mock_run = mocker.patch(

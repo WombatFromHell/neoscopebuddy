@@ -73,7 +73,7 @@ wheels = [
 
 [[package]]
 name = "neoscopebuddy"
-version = "1.2.6"
+version = "1.2.7"
 source = { virtual = "." }
 
 [package.dev-dependencies]

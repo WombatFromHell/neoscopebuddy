@@ -44,26 +44,22 @@ class TestApplicationUnit:
         assert app.profile_manager is not None
         assert app.config_manager is not None
         assert app.command_executor is not None
-        assert app.system_detector is not None
 
     def test_application_initialization_with_custom_components(self, mocker):
         """Test that Application initializes with custom components when provided."""
         mock_profile_manager = mocker.Mock()
         mock_config_manager = mocker.Mock()
         mock_command_executor = mocker.Mock()
-        mock_system_detector = mocker.Mock()
 
         app = Application(
             profile_manager=mock_profile_manager,
             config_manager=mock_config_manager,
             command_executor=mock_command_executor,
-            system_detector=mock_system_detector,
         )
 
         assert app.profile_manager == mock_profile_manager
         assert app.config_manager == mock_config_manager
         assert app.command_executor == mock_command_executor
-        assert app.system_detector == mock_system_detector
 
     def test_run_returns_help_exit_code_with_no_args(self):
         """Test that run returns 0 when no arguments are provided (shows help)."""
@@ -79,10 +75,9 @@ class TestApplicationUnit:
 
     def test_run_returns_error_exit_code_when_gamescope_not_found(self, mocker):
         """Test that run returns 1 when gamescope executable is not found."""
-        mock_system_detector = mocker.Mock()
-        mock_system_detector.find_executable.return_value = False
 
-        app = Application(system_detector=mock_system_detector)
+        mocker.patch("nscb.application.shutil.which", return_value=None)
+        app = Application()
         result = app.run(["--", "test_app"])
         assert result == 1
 
@@ -91,8 +86,7 @@ class TestApplicationUnit:
         mock_profile_manager = mocker.Mock()
         mock_profile_manager.parse_profile_args.return_value = ([], ["--", "test_app"])
 
-        mock_system_detector = mocker.Mock()
-        mock_system_detector.find_executable.return_value = True
+        mocker.patch("nscb.application.shutil.which", return_value="/usr/bin/gamescope")
 
         # Mock command executor to prevent actual execution
         mock_command_executor = mocker.Mock()
@@ -100,7 +94,6 @@ class TestApplicationUnit:
 
         app = Application(
             profile_manager=mock_profile_manager,
-            system_detector=mock_system_detector,
             command_executor=mock_command_executor,
         )
 
@@ -112,15 +105,13 @@ class TestApplicationUnit:
         mock_profile_manager = mocker.Mock()
         mock_profile_manager.parse_profile_args.return_value = ([], ["--", "test_app"])
 
-        mock_system_detector = mocker.Mock()
-        mock_system_detector.find_executable.return_value = True
+        mocker.patch("nscb.application.shutil.which", return_value="/usr/bin/gamescope")
 
         mock_command_executor = mocker.Mock()
         mock_command_executor.execute_gamescope_command.return_value = 0
 
         app = Application(
             profile_manager=mock_profile_manager,
-            system_detector=mock_system_detector,
             command_executor=mock_command_executor,
         )
 
@@ -135,15 +126,13 @@ class TestApplicationUnit:
             ["--", "test_app"],
         )
 
-        mock_system_detector = mocker.Mock()
-        mock_system_detector.find_executable.return_value = True
+        mocker.patch("nscb.application.shutil.which", return_value="/usr/bin/gamescope")
 
         mock_command_executor = mocker.Mock()
         mock_command_executor.execute_gamescope_command.return_value = 0
 
         app = Application(
             profile_manager=mock_profile_manager,
-            system_detector=mock_system_detector,
             command_executor=mock_command_executor,
         )
 
@@ -219,7 +208,7 @@ class TestApplicationIntegration:
 
         # Mock file finding to return a fake path
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path",
+            "nscb.config_manager.ConfigManager.find_config_file",
             return_value=Path("/fake/config"),
         )
         mocker.patch(
@@ -228,9 +217,7 @@ class TestApplicationIntegration:
         )
 
         # Mock system detector to indicate gamescope exists
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
 
         # Mock command executor to prevent actual command execution
         mock_run = mocker.patch(
@@ -254,13 +241,12 @@ class TestApplicationIntegration:
 
         # Mock finding the config file
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
 
         # Mock system detector
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
 
         # Mock command executor to prevent actual command execution
         mock_run = mocker.patch(
@@ -297,14 +283,12 @@ class TestApplicationEndToEnd:
         try:
             mocker.patch("sys.argv", ["nscb", "-p", "gaming", "--", "fake_app"])
             mocker.patch(
-                "nscb.config_manager.PathHelper.get_config_path",
+                "nscb.config_manager.ConfigManager.find_config_file",
                 return_value=config_path,
             )
+            mocker.patch("nscb.application.shutil.which", return_value=True)
             mocker.patch(
-                "nscb.system_detector.PathHelper.executable_exists", return_value=True
-            )
-            mocker.patch(
-                "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+                "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
                 return_value=False,
             )
             mock_run = mocker.patch(
@@ -341,14 +325,12 @@ class TestApplicationEndToEnd:
                 ["nscb", "-p", "gaming", "--borderless", "-W", "2560", "--", "app"],
             )
             mocker.patch(
-                "nscb.config_manager.PathHelper.get_config_path",
+                "nscb.config_manager.ConfigManager.find_config_file",
                 return_value=config_path,
             )
+            mocker.patch("nscb.application.shutil.which", return_value=True)
             mocker.patch(
-                "nscb.system_detector.PathHelper.executable_exists", return_value=True
-            )
-            mocker.patch(
-                "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+                "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
                 return_value=False,
             )
             mock_run = mocker.patch(
@@ -387,15 +369,14 @@ streaming=--borderless -W 1280 -H 720
         cmd = "nscb --profiles=gaming,streaming -W 1600 -- app".split(" ")
 
         mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mock_run = mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
@@ -415,9 +396,7 @@ streaming=--borderless -W 1280 -H 720
 
     def test_main_error_scenarios(self, mocker):
         # Test missing gamescope executable
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=False
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=None)
         mock_log = mocker.patch("logging.error")
         # Provide a profile to avoid help
 
@@ -427,9 +406,7 @@ streaming=--borderless -W 1280 -H 720
         mock_log.assert_called_with("'gamescope' not found in PATH")
 
     def test_main_error_missing_gamescope(self, mocker):
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=False
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=None)
         mock_log = mocker.patch("logging.error")
 
         app = Application()
@@ -438,9 +415,7 @@ streaming=--borderless -W 1280 -H 720
         mock_log.assert_called_with("'gamescope' not found in PATH")
 
     def test_main_error_missing_config(self, mocker):
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
 
         # Mock the _process_profiles method to raise the expected exception
         def mock_process_profiles(profiles, args):
@@ -518,13 +493,13 @@ class TestApplicationFixtureUtilization:
 
         # Also mock the system detector to prevent actual gamescope execution
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
 
         # Mock the gamescope executable detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
 
@@ -572,7 +547,7 @@ class TestApplicationFixtureUtilization:
 
         # Mock the system detector to prevent actual gamescope execution
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
 
@@ -676,7 +651,7 @@ class TestApplicationFixtureUtilization:
 
         # Mock the system detector to prevent actual gamescope execution
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
 
@@ -728,7 +703,7 @@ class TestApplicationFixtureUtilization:
 
         # Mock the system detector to prevent actual gamescope execution
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
 
@@ -769,11 +744,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -809,11 +784,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -849,11 +824,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=True,
         )
         mock_run = mocker.patch(
@@ -886,11 +861,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mock_run = mocker.patch(
@@ -922,11 +897,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -959,11 +934,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -1004,11 +979,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -1050,11 +1025,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -1098,11 +1073,11 @@ class TestApplicationCondition:
             return_value=mock_config_result,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable",
+            "nscb.application.shutil.which",
             return_value=True,
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=True,
         )
         mocker.patch(

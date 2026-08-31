@@ -140,7 +140,7 @@ class TestExceptionsIntegration:
     def test_config_not_found_exception_integration(self, mocker):
         """Test ConfigNotFoundError raised in ConfigManager operations."""
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=None
+            "nscb.config_manager.ConfigManager.find_config_file", return_value=None
         )
         with pytest.raises(ConfigNotFoundError):
             config_path = ConfigManager.find_config_file()
@@ -162,11 +162,9 @@ class TestExceptionsIntegration:
     def test_exception_handling_in_application_workflow(self, mocker):
         """Test how exceptions are handled in the application workflow."""
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=None
+            "nscb.config_manager.ConfigManager.find_config_file", return_value=None
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
             "nscb.command_executor.CommandExecutor.execute_gamescope_command",
             return_value=0,
@@ -180,11 +178,10 @@ class TestExceptionsIntegration:
         config_data = "existing=-f -W 1920 -H 1080\n"
         config_path = temp_config_with_content(config_data)
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mock_log = mocker.patch("logging.error")
         app = Application()
         result = app.run(["-p", "nonexistent"])
@@ -197,11 +194,9 @@ class TestExceptionsEndToEnd:
 
     def test_e2e_basic_error_handling(self, mocker):
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=None
+            "nscb.config_manager.ConfigManager.find_config_file", return_value=None
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch("builtins.print")
         mock_log = mocker.patch("logging.error")
         mocker.patch(
@@ -215,11 +210,9 @@ class TestExceptionsEndToEnd:
 
     def test_e2e_advanced_error_condition_handling(self, mocker):
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=None
+            "nscb.config_manager.ConfigManager.find_config_file", return_value=None
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch("builtins.print")
         mock_log = mocker.patch("logging.error")
         mocker.patch(
@@ -237,9 +230,7 @@ class TestExceptionsEndToEnd:
             ConfigManager.load_config(non_existent)
 
     def test_exception_usage_in_real_error_flows_e2e(self, mocker):
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=False
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=None)
         mock_log = mocker.patch("logging.error")
         app = Application()
         result = app.run(["--", "test_app"])
@@ -250,12 +241,10 @@ class TestExceptionsEndToEnd:
         with open(temp_config_file, "w") as f:
             f.write("invalid profile name=-f\n")
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path",
+            "nscb.config_manager.ConfigManager.find_config_file",
             return_value=temp_config_file,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
             "nscb.command_executor.CommandExecutor.execute_gamescope_command",
             return_value=1,
@@ -270,9 +259,7 @@ class TestExceptionsEndToEnd:
         assert "invalid profile name" in actual_call
 
     def test_executable_not_found_error_integration(self, mocker):
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=False
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=None)
         mock_log = mocker.patch("logging.error")
         app = Application()
         result = app.run(["--", "test_app"])
@@ -285,11 +272,10 @@ class TestExceptionsEndToEnd:
         config_data = "gaming=-f -W 1920 -H 1080\n"
         config_path = temp_config_with_content(config_data)
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mock_log = mocker.patch("logging.error")
         app = Application()
         result = app.run(["-p", "nonexistent_profile"])

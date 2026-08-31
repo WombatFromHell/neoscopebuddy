@@ -116,9 +116,7 @@ def temp_config_with_content():
 @pytest.fixture
 def mock_gamescope(mocker):
     """Fixture for mock gamescope executable."""
-    return mocker.patch(
-        "nscb.system_detector.SystemDetector.find_executable", return_value=True
-    )
+    return mocker.patch("nscb.application.shutil.which", return_value=True)
 
 
 @pytest.fixture
@@ -134,55 +132,6 @@ def mock_config_file(mocker, temp_config_file):
         )
 
     return _setup_config
-
-
-@pytest.fixture
-def mock_system_detection_scenarios(mocker):
-    """
-    Fixture for testing system detection scenarios.
-
-    Provides predefined system detection configurations for testing.
-
-    Usage:
-        def test_system_detection(mock_system_detection_scenarios):
-            scenarios = mock_system_detection_scenarios
-
-            # Test gamescope active detection
-            scenarios["gamescope_active"]()
-            assert is_gamescope_active() == True
-
-            # Test gamescope inactive detection
-            scenarios["gamescope_inactive"]()
-            assert is_gamescope_active() == False
-    """
-
-    def _gamescope_active():
-        mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
-        )
-
-    def _gamescope_inactive():
-        mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
-            return_value=False,
-        )
-
-    def _executable_found():
-        mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable", return_value=True
-        )
-
-    def _executable_not_found():
-        mocker.patch(
-            "nscb.system_detector.SystemDetector.find_executable", return_value=False
-        )
-
-    return {
-        "gamescope_active": _gamescope_active,
-        "gamescope_inactive": _gamescope_inactive,
-        "executable_found": _executable_found,
-        "executable_not_found": _executable_not_found,
-    }
 
 
 @pytest.fixture
@@ -254,7 +203,7 @@ def mock_execution_scenarios(mocker):
 @pytest.fixture
 def mock_is_gamescope_active(mocker):
     """Fixture to mock is_gamescope_active function."""
-    return mocker.patch("nscb.system_detector.SystemDetector.is_gamescope_active")
+    return mocker.patch("nscb.environment_helper.EnvironmentHelper.is_gamescope_active")
 
 
 @pytest.fixture
@@ -586,10 +535,10 @@ def mock_application_workflow(mocker, temp_config_file):
         def __init__(self):
             self.config_path = temp_config_file
             self.mock_gamescope = mocker.patch(
-                "nscb.system_detector.SystemDetector.find_executable", return_value=True
+                "nscb.application.shutil.which", return_value=True
             )
             self.mock_is_active = mocker.patch(
-                "nscb.system_detector.SystemDetector.is_gamescope_active",
+                "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
                 return_value=False,
             )
             self.mock_run = mocker.patch(
@@ -725,18 +674,17 @@ def system_detection_comprehensive(mocker):
             detection.gamescope_active(True).executable_found(True)
 
             # Test detection
-            assert SystemDetector.is_gamescope_active() == True
-            assert SystemDetector.find_executable("gamescope") == True
+            assert EnvironmentHelper.is_gamescope_active() == True
     """
 
     class SystemDetectionMock:
         def __init__(self):
             self.mock_is_active = mocker.patch(
-                "nscb.system_detector.SystemDetector.is_gamescope_active",
+                "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
                 return_value=False,
             )
             self.mock_find_exec = mocker.patch(
-                "nscb.system_detector.SystemDetector.find_executable", return_value=True
+                "nscb.application.shutil.which", return_value=True
             )
 
         def gamescope_active(self, active=True):
@@ -893,11 +841,11 @@ def integration_test_setup(mocker):
                 "nscb.config_manager.ConfigManager.load_config", return_value=None
             )
             self.mock_is_active = mocker.patch(
-                "nscb.system_detector.SystemDetector.is_gamescope_active",
+                "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
                 return_value=False,
             )
             self.mock_find_exec = mocker.patch(
-                "nscb.system_detector.SystemDetector.find_executable", return_value=True
+                "nscb.application.shutil.which", return_value=True
             )
             self.mock_run = mocker.patch(
                 "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0

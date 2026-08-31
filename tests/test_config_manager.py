@@ -417,7 +417,8 @@ class TestConfigManagerIntegration:
 
         # Mock config loading
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
 
         # Test the config manager loading the config
@@ -452,15 +453,14 @@ class TestConfigManagerIntegration:
         app = Application()
 
         # Mock executable detection
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
-        mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
         mock_run = mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
@@ -535,14 +535,13 @@ gaming=--borderless -W 1920 -H 1080
 
         config_path = temp_config_with_content(config_data)
 
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
-        )
-        mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch("sys.argv", ["nscb", "-p", "performance", "-W", "3200"])

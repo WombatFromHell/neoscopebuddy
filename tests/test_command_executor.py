@@ -3,7 +3,7 @@
 import pytest
 
 from nscb.command_executor import CommandExecutor
-from nscb.system_detector import SystemDetector
+from nscb.environment_helper import EnvironmentHelper
 
 
 class TestCommandExecutorUnit:
@@ -261,14 +261,14 @@ class TestCommandExecutorModuleIntegration:
             assert result == expected
 
     def test_command_executor_system_detection_integration(self, mocker):
-        """Test CommandExecutor execution with SystemDetector for gamescope detection."""
+        """Test gamescope detection for command execution."""
         # Mock environment detection
         mocker.patch.dict(
             "os.environ", {"XDG_CURRENT_DESKTOP": "gamescope"}, clear=True
         )
 
         # Verify that gamescope detection works
-        assert SystemDetector.is_gamescope_active() is True
+        assert EnvironmentHelper.is_gamescope_active() is True
 
     def test_command_execution_full_integration(self, mocker):
         """Test full command execution workflow with mocked components."""
@@ -279,7 +279,7 @@ class TestCommandExecutorModuleIntegration:
             clear=True,
         )
         mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
 
@@ -318,7 +318,7 @@ class TestCommandExecutorEndToEnd:
             return_value=("", ""),
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -347,7 +347,8 @@ class TestCommandExecutorEndToEnd:
             return_value=("", ""),
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
+            return_value=True,
         )
         mocker.patch(
             "nscb.command_executor.CommandExecutor.build_command",
@@ -379,7 +380,8 @@ class TestCommandExecutorEndToEnd:
             return_value=("", ""),
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
+            return_value=True,
         )
         mocker.patch(
             "nscb.command_executor.CommandExecutor.build_command",
@@ -407,7 +409,7 @@ class TestCommandExecutorEndToEnd:
             return_value=("echo pre", "echo post"),
         )
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -463,7 +465,7 @@ class TestCommandExecutorEndToEnd:
     def test_execution_command_execution_variations(self, mocker):
         # Test with gamescope not active
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -476,7 +478,8 @@ class TestCommandExecutorEndToEnd:
 
         # Test with gamescope active
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
+            return_value=True,
         )
         mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
@@ -488,7 +491,7 @@ class TestCommandExecutorEndToEnd:
 
     def test_execution_error_handling_in_engine(self, mocker):
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -518,7 +521,7 @@ class TestCommandExecutorEndToEnd:
         """Test _build_inactive_gamescope_command when no -- separator is found."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         # Mock LD_PRELOAD functions to return False
@@ -552,7 +555,7 @@ class TestCommandExecutorEndToEnd:
         """Test _build_inactive_gamescope_command when no -- separator but with exports."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         # Mock LD_PRELOAD functions to return False
@@ -584,7 +587,7 @@ class TestCommandExecutorEndToEnd:
     ):
         """NSCB_FRAMELIMIT injects -r into the gamescope launch args."""
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -606,7 +609,7 @@ class TestCommandExecutorEndToEnd:
     ):
         """NSCB_FRAMELIMIT overrides a profile/explicit -r."""
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -629,7 +632,7 @@ class TestCommandExecutorEndToEnd:
     ):
         """NSCB_FRAMELIMIT only affects gamescope args before --, not the app."""
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -651,7 +654,7 @@ class TestCommandExecutorEndToEnd:
     ):
         """NSCB_FRAMELIMIT is ignored when gamescope is already active."""
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=True,
         )
         mocker.patch(
@@ -672,7 +675,8 @@ class TestCommandExecutorEndToEnd:
         """Test _build_active_gamescope_command when no -- separator is found."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
+            return_value=True,
         )
         # Mock LD_PRELOAD functions to return False
         mocker.patch(
@@ -704,7 +708,8 @@ class TestCommandExecutorEndToEnd:
         """Test _build_active_gamescope_command when no -- separator but with exports."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
+            return_value=True,
         )
         # Mock LD_PRELOAD functions to return False
         mocker.patch(
@@ -734,7 +739,8 @@ class TestCommandExecutorEndToEnd:
         """Test execute_gamescope_command when no command to execute is built."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active", return_value=True
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
+            return_value=True,
         )
         # Mock build command to return empty string
         mocker.patch(
@@ -751,7 +757,7 @@ class TestCommandExecutorEndToEnd:
         """Test execute_gamescope_command when LD_PRELOAD is present and should be handled."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         # Mock LD_PRELOAD functions to return True so LD_PRELOAD is handled
@@ -796,7 +802,7 @@ class TestCommandExecutorEndToEnd:
         """Test execute_gamescope_command when LD_PRELOAD wrapping is disabled via environment."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         # Mock LD_PRELOAD functions to return True to disable LD_PRELOAD wrapping
@@ -843,7 +849,7 @@ class TestCommandExecutorEndToEnd:
         """Test execute_gamescope_command when LD_PRELOAD wrapping is disabled via FAUGUS_LOG."""
         # Mock environment detection
         mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         # Mock LD_PRELOAD functions to return True to disable LD_PRELOAD wrapping

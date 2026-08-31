@@ -10,8 +10,6 @@ import os
 import shutil
 import subprocess
 
-from .types import ArgsList
-
 
 class DisplayDetector:
     """Query the active display's current mode for auto-resolution."""
@@ -149,7 +147,7 @@ class DisplayDetector:
         return sorted(enabled, key=sort_key)[0]
 
     @staticmethod
-    def has_resolution_flag(args: ArgsList) -> bool:
+    def has_resolution_flag(args: list[str]) -> bool:
         for tok in args:
             if tok in DisplayDetector.RES_FLAGS:
                 return True
@@ -158,7 +156,7 @@ class DisplayDetector:
         return False
 
     @staticmethod
-    def extract_prefer_output(args: ArgsList) -> str | None:
+    def extract_prefer_output(args: list[str]) -> str | None:
         i = 0
         while i < len(args):
             tok = args[i]

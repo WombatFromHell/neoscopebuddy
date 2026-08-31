@@ -14,11 +14,9 @@ graph LR
         command_executor
         argument_processor
         environment_helper
-        system_detector
-        path_helper
         gamescope_args
-        types
         exceptions
+        display_detector
     end
 
     subgraph "test files"
@@ -28,11 +26,10 @@ graph LR
         t_cmd["test_command_executor"]
         t_arg["test_argument_processor"]
         t_env["test_environment_helper"]
-        t_sys["test_system_detector"]
         t_ga["test_gamescope_args"]
         t_cr["test_config_result"]
-        t_types["test_types"]
         t_exc["test_exceptions"]
+        t_dd["test_display_detector"]
     end
 
     t_app --> application
@@ -47,27 +44,22 @@ graph LR
     t_cfg --> profile_manager
 
     t_cmd --> command_executor
-    t_cmd --> system_detector
+    t_cmd --> environment_helper
 
     t_arg --> argument_processor
     t_arg --> profile_manager
 
     t_env --> environment_helper
     t_env --> command_executor
-    t_env --> system_detector
-
-    t_sys --> system_detector
 
     t_ga --> gamescope_args
     t_ga --> argument_processor
     t_ga --> profile_manager
 
+    t_dd --> display_detector
+
     t_cr --> config_result
     t_cr --> config_manager
-
-    t_types --> types
-    t_types --> argument_processor
-    t_types --> profile_manager
 
     t_exc --> exceptions
     t_exc --> config_manager
@@ -79,28 +71,24 @@ graph LR
     style command_executor fill:#9f9,stroke:#6b6
     style argument_processor fill:#9f9,stroke:#6b6
     style environment_helper fill:#9f9,stroke:#6b6
-    style system_detector fill:#9f9,stroke:#6b6
-    style path_helper fill:#9f9,stroke:#6b6
     style gamescope_args fill:#9f9,stroke:#6b6
-    style types fill:#9f9,stroke:#6b6
     style exceptions fill:#9f9,stroke:#6b6
+    style display_detector fill:#9f9,stroke:#6b6
 ```
 
 ### Source Module Test Coverage
 
 | Source Module | Tested by |
 |---|---|
-| `application.py` | test_application, test_types, test_path_helper, test_config_manager, test_config_result, test_exceptions, test_system_detector, test_environment_helper, test_gamescope_args, test_argument_processor |
-| `profile_manager.py` | test_profile_manager, test_types, test_config_manager, test_gamescope_args, test_argument_processor |
-| `config_manager.py` | test_config_manager, test_config_result, test_path_helper, test_exceptions |
-| `command_executor.py` | test_command_executor, test_environment_helper |
-| `argument_processor.py` | test_argument_processor, test_types, test_gamescope_args |
-| `environment_helper.py` | test_environment_helper |
-| `system_detector.py` | test_system_detector, test_command_executor, test_environment_helper, test_path_helper |
+| `application.py` | test_application, test_config_manager, test_config_result, test_exceptions, test_environment_helper, test_gamescope_args, test_argument_processor |
+| `profile_manager.py` | test_profile_manager, test_config_manager, test_gamescope_args, test_argument_processor |
+| `config_manager.py` | test_config_manager, test_config_result, test_exceptions |
+| `command_executor.py` | test_command_executor, test_environment_helper, test_application |
+| `argument_processor.py` | test_argument_processor, test_gamescope_args |
+| `environment_helper.py` | test_environment_helper, test_command_executor, test_application |
 | `config_result.py` | test_config_result, test_application |
-| `path_helper.py` | test_path_helper |
+| `display_detector.py` | test_display_detector, test_command_executor |
 | `gamescope_args.py` | test_gamescope_args |
-| `types.py` | test_types |
 | `exceptions.py` | test_exceptions |
 
 ## Fixture Mock Target Map
@@ -113,7 +101,6 @@ graph LR
         f_int["mock_integration_setup"]
         f_gsc["mock_gamescope"]
         f_cfg["mock_config_file"]
-        f_sys_det["mock_system_detection_scenarios"]
         f_isgsm["mock_is_gamescope_active"]
         f_env["mock_env_commands"]
         f_wf["mock_application_workflow"]
@@ -125,8 +112,8 @@ graph LR
         sm_rnb["CommandExecutor.run_nonblocking"]
         sm_bc["CommandExecutor.build_command"]
         sm_gec["CommandExecutor.get_env_commands"]
-        sm_fe["SystemDetector.find_executable"]
-        sm_iga["SystemDetector.is_gamescope_active"]
+        sm_fe["shutil.which (nscb.application)"]
+        sm_iga["EnvironmentHelper.is_gamescope_active"]
         sm_ffc["ConfigManager.find_config_file"]
         sm_lc["ConfigManager.load_config"]
         sm_ma["ProfileManager.merge_arguments"]
@@ -140,9 +127,6 @@ graph LR
     f_gsc --> sm_fe
 
     f_cfg --> sm_ffc
-
-    f_sys_det --> sm_iga
-    f_sys_det --> sm_fe
 
     f_isgsm --> sm_iga
 
@@ -183,16 +167,15 @@ graph LR
 | `mock_integration_setup` | dict | `run_nonblocking`, `build_command`, `print`, `merge_arguments`, `load_config` |
 | `temp_config_file` | tempdir | none |
 | `temp_config_with_content` | factory | none |
-| `mock_gamescope` | patch | `find_executable` → True |
+| `mock_gamescope` | patch | `nscb.application.shutil.which` → path |
 | `mock_config_file` | factory | `find_config_file` |
-| `mock_system_detection_scenarios` | dict | `is_gamescope_active`, `find_executable` |
-| `mock_is_gamescope_active` | patch | `is_gamescope_active` |
+| `mock_is_gamescope_active` | patch | `EnvironmentHelper.is_gamescope_active` |
 | `mock_env_commands` | factory | `get_env_commands` |
 | `mock_ld_preload_scenarios` | monkeypatch | `LD_PRELOAD`, `NSCB_DISABLE_LD_PRELOAD_WRAP`, `FAUGUS_LOG` |
-| `mock_application_workflow` | class | `find_executable`, `is_gamescope_active`, `run_nonblocking`, `build_command`, `find_config_file` |
+| `mock_application_workflow` | class | `shutil.which`, `is_gamescope_active`, `run_nonblocking`, `build_command`, `find_config_file` |
 | `xdg_config_scenarios` | monkeypatch | `XDG_CONFIG_HOME`, `HOME` |
-| `system_detection_comprehensive` | class | `is_gamescope_active`, `find_executable` |
-| `integration_test_setup` | class | `find_config_file`, `load_config`, `is_gamescope_active`, `find_executable`, `run_nonblocking`, `build_command`, `merge_arguments` |
+| `system_detection_comprehensive` | class | `is_gamescope_active`, `shutil.which` |
+| `integration_test_setup` | class | `find_config_file`, `load_config`, `is_gamescope_active`, `shutil.which`, `run_nonblocking`, `build_command`, `merge_arguments` |
 
 Data-only fixtures (no mocking): `mock_execution_scenarios`, `mock_environment_variables`, `complex_args_scenario`, `profile_scenarios`, `config_scenarios`, `error_simulation`, `test_config_content`, `argument_processing_patterns`, `error_simulation_comprehensive`, `profile_test_scenarios`.
 

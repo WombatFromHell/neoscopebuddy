@@ -129,11 +129,10 @@ class TestArgumentProcessorIntegration:
 
         # Mock required components
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mock_run = mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
@@ -246,11 +245,10 @@ class TestArgumentProcessorEndToEnd:
 
         # Mock components to focus on argument processing
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mock_run = mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )

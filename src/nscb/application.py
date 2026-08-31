@@ -4,6 +4,7 @@
 import logging
 import os
 import shlex
+import shutil
 import sys
 from typing import Optional
 
@@ -12,8 +13,6 @@ from .config_manager import ConfigManager
 from .environment_helper import EnvironmentHelper, debug_log
 from .exceptions import ConfigNotFoundError, NscbError, ProfileNotFoundError
 from .profile_manager import ProfileManager
-from .system_detector import SystemDetector
-from .types import ArgsList, EnvExports, ExitCode
 
 __version__ = "{{VERSION}}"  # Replaced at build time
 
@@ -103,14 +102,12 @@ class Application:
         profile_manager: Optional[ProfileManager] = None,
         config_manager: Optional[ConfigManager] = None,
         command_executor: Optional[CommandExecutor] = None,
-        system_detector: Optional[SystemDetector] = None,
     ):
         self.profile_manager = profile_manager or ProfileManager()
         self.config_manager = config_manager or ConfigManager()
         self.command_executor = command_executor or CommandExecutor()
-        self.system_detector = system_detector or SystemDetector()
 
-    def run(self, args: ArgsList) -> ExitCode:
+    def run(self, args: list[str]) -> int:
         """Run the application with the given arguments."""
         # ponytail: always capture saved LD_PRELOAD when NSCB_DEBUG=1, even for --help (which bypasses execute path).
         debug_log(
@@ -122,7 +119,7 @@ class Application:
             return 0
 
         # Validate dependencies
-        if not self.system_detector.find_executable("gamescope"):
+        if shutil.which("gamescope") is None:
             logging.error("'gamescope' not found in PATH")
             return 1
 
@@ -147,7 +144,7 @@ class Application:
         # once gamescope is active we're already committed to running inside it
         # (unless NSCB_FORCE_NESTED overrides us into launching a nested session)
         if gamescope_condition is not None and not (
-            SystemDetector.is_gamescope_active()
+            EnvironmentHelper.is_gamescope_active()
             and not EnvironmentHelper.force_nested()
         ):
             if not self.command_executor.evaluate_condition(gamescope_condition):
@@ -157,8 +154,8 @@ class Application:
         return self.command_executor.execute_gamescope_command(final_args, exports)
 
     def _process_profiles(
-        self, profiles: ArgsList, args: ArgsList
-    ) -> tuple[ArgsList, EnvExports, str | None]:
+        self, profiles: list[str], args: list[str]
+    ) -> tuple[list[str], dict[str, str], str | None]:
         """Process profiles and merge with arguments, returning args, exports, and gamescope_condition."""
         config_file = self.config_manager.find_config_file()
         if not config_file:
@@ -184,7 +181,7 @@ class Application:
         return final_args, exports, gamescope_condition
 
 
-def main() -> ExitCode:
+def main() -> int:
     """Main entry point."""
     try:
         app = Application()

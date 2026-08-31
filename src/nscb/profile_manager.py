@@ -1,20 +1,16 @@
 """Profile management functionality for NeoscopeBuddy."""
 
 from functools import reduce
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .argument_processor import ArgumentProcessor  # noqa: F401
-
+from .argument_processor import ArgumentProcessor
 from .gamescope_args import GAMESCOPE_ARGS_MAP
-from .types import ArgsList, FlagTuple, ProfileArgsList
 
 
 class ProfileManager:
     """Manages profile parsing and merging functionality."""
 
     @staticmethod
-    def parse_profile_args(args: ArgsList) -> tuple[list[str], list[str]]:
+    def parse_profile_args(args: list[str]) -> tuple[list[str], list[str]]:
         """Extract profiles and remaining args from command line."""
         profiles: list[str] = []
         rest: list[str] = []
@@ -52,7 +48,7 @@ class ProfileManager:
         return profiles, rest
 
     @staticmethod
-    def merge_arguments(profile_args: ArgsList, override_args: ArgsList) -> list[str]:
+    def merge_arguments(profile_args: list[str], override_args: list[str]) -> list[str]:
         """
         Merge a profile argument list with an override argument list.
 
@@ -60,9 +56,6 @@ class ProfileManager:
         Display mode conflicts (-f/--fullscreen vs --borderless) are mutually exclusive.
         """
         # Split arguments at the '--' separator
-        # Import here to avoid circular import
-        from .argument_processor import ArgumentProcessor
-
         (p_before, _), (o_before, o_app) = (
             ArgumentProcessor.split_at_separator(profile_args),
             ArgumentProcessor.split_at_separator(override_args),
@@ -82,8 +75,9 @@ class ProfileManager:
 
     @staticmethod
     def _merge_flags(
-        profile_flags: list[FlagTuple], override_flags: list[FlagTuple]
-    ) -> list[FlagTuple]:
+        profile_flags: list[tuple[str, str | None]],
+        override_flags: list[tuple[str, str | None]],
+    ) -> list[tuple[str, str | None]]:
         """Merge profile and override flags; override wins on conflicts."""
         conflict_canon_set = {
             ProfileManager._canon("-f"),  # fullscreen
@@ -117,8 +111,8 @@ class ProfileManager:
 
     @staticmethod
     def _classify_flags_by_conflict(
-        flags: list[FlagTuple], conflict_canon_set: set[str]
-    ) -> tuple[list[FlagTuple], list[FlagTuple]]:
+        flags: list[tuple[str, str | None]], conflict_canon_set: set[str]
+    ) -> tuple[list[tuple[str, str | None]], list[tuple[str, str | None]]]:
         """Classify flags into conflict and non-conflict lists."""
         conflicts = [
             f for f in flags if ProfileManager._canon(f[0]) in conflict_canon_set
@@ -135,7 +129,7 @@ class ProfileManager:
         return GAMESCOPE_ARGS_MAP.get(name, name)
 
     @staticmethod
-    def _flags_to_args_list(flags: list[FlagTuple]) -> ArgsList:
+    def _flags_to_args_list(flags: list[tuple[str, str | None]]) -> list[str]:
         """Convert flag tuples to flat argument list."""
         result = []
         for flag, val in flags:
@@ -145,7 +139,7 @@ class ProfileManager:
         return result
 
     @staticmethod
-    def merge_multiple_profiles(profile_args_list: ProfileArgsList) -> list[str]:
+    def merge_multiple_profiles(profile_args_list: list[list[str]]) -> list[str]:
         """Merge multiple profile argument lists."""
         if not profile_args_list:
             return []

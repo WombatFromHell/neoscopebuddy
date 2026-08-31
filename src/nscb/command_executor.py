@@ -9,15 +9,13 @@ from pathlib import Path
 from .argument_processor import ArgumentProcessor
 from .display_detector import DisplayDetector
 from .environment_helper import EnvironmentHelper, debug_log
-from .system_detector import SystemDetector
-from .types import ArgsList, EnvExports, ExitCode
 
 
 class CommandExecutor:
     """Handles command building and execution."""
 
     @staticmethod
-    def run_nonblocking(cmd: str, extra_env: EnvExports | None = None) -> ExitCode:
+    def run_nonblocking(cmd: str, extra_env: dict[str, str] | None = None) -> int:
         """Execute command, forwarding stdout/stderr in real-time."""
         # ponytail: subprocess.run inherits stdio by default, preserving
         # interleaving that the old Popen+readline selector loop lost.
@@ -30,7 +28,7 @@ class CommandExecutor:
         return EnvironmentHelper.get_pre_post_commands()
 
     @staticmethod
-    def build_command(parts: ArgsList) -> str:
+    def build_command(parts: list[str]) -> str:
         """Build command string from parts with proper filtering."""
         # Filter out empty strings before joining to avoid semicolon artifacts
         filtered_parts = [part for part in parts if part]
@@ -38,8 +36,8 @@ class CommandExecutor:
 
     @staticmethod
     def execute_gamescope_command(
-        final_args: ArgsList, exports: EnvExports | None = None
-    ) -> ExitCode:
+        final_args: list[str], exports: dict[str, str] | None = None
+    ) -> int:
         """Execute gamescope command with proper handling and return exit code."""
         # ponytail: capture saved LD_PRELOAD/LD_LIBRARY_PATH early so NSCB_DEBUG=1 always shows what the shim saved, even when gamescope is already active (which skips _check).
         debug_log(
@@ -55,7 +53,7 @@ class CommandExecutor:
         pre_cmd, post_cmd = CommandExecutor.get_env_commands()
 
         gamescope_active = (
-            SystemDetector.is_gamescope_active()
+            EnvironmentHelper.is_gamescope_active()
             and not EnvironmentHelper.force_nested()
         )
         debug_log(f"execute_gamescope_command: gamescope is active: {gamescope_active}")
@@ -83,7 +81,7 @@ class CommandExecutor:
 
     @staticmethod
     def _build_inactive_gamescope_command(
-        args: ArgsList, pre_cmd: str, post_cmd: str
+        args: list[str], pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is not active."""
         has_ld_preload = CommandExecutor._check_ld_preload_status()
@@ -96,26 +94,18 @@ class CommandExecutor:
             f"_build_inactive_gamescope_command: gamescope_args={gamescope_args}, app_args={app_args}"
         )
 
+        gamescope_cmd = CommandExecutor._build_gamescope_command_for_inactive(
+            gamescope_args, has_ld_preload
+        )
         if app_args:
-            gamescope_cmd = CommandExecutor._build_gamescope_command_for_inactive(
-                gamescope_args, has_ld_preload
+            gamescope_cmd = (
+                f"{gamescope_cmd} -- "
+                f"{CommandExecutor._build_final_app_command(app_args, has_ld_preload)}"
             )
-            final_app_cmd = CommandExecutor._build_final_app_command(
-                app_args, has_ld_preload
-            )
-            full_cmd = f"{gamescope_cmd} -- {final_app_cmd}"
-            final_command = CommandExecutor.build_command([pre_cmd, full_cmd, post_cmd])
-        else:
-            gamescope_cmd = CommandExecutor._build_gamescope_command_for_inactive(
-                gamescope_args, has_ld_preload
-            )
-            final_command = CommandExecutor.build_command(
-                [pre_cmd, gamescope_cmd, post_cmd]
-            )
-        return final_command
+        return CommandExecutor.build_command([pre_cmd, gamescope_cmd, post_cmd])
 
     @staticmethod
-    def _apply_framelimit(gamescope_args: ArgsList) -> ArgsList:
+    def _apply_framelimit(gamescope_args: list[str]) -> list[str]:
         """Prepend NSCB_FRAMELIMIT as -r, overriding any existing -r/--nested-refresh."""
         # ponytail: env force-wins; only matters at gamescope launch (inactive path).
         refresh = EnvironmentHelper.get_framelimit()
@@ -128,7 +118,7 @@ class CommandExecutor:
         return ["-r", str(refresh)] + stripped
 
     @staticmethod
-    def _apply_auto_res(gamescope_args: ArgsList) -> ArgsList:
+    def _apply_auto_res(gamescope_args: list[str]) -> list[str]:
         """Inject -W/-H from the active display when auto-res is active.
 
         Explicit resolution flags always win. Without NSCB_AUTO_RES set, auto-res
@@ -160,9 +150,9 @@ class CommandExecutor:
         return ["-W", str(w), "-H", str(h)] + stripped
 
     @staticmethod
-    def _strip_flag(args: ArgsList, names: set[str]) -> ArgsList:
+    def _strip_flag(args: list[str], names: set[str]) -> list[str]:
         """Remove the given flags and their values (two-token or --name=val form)."""
-        result: ArgsList = []
+        result: list[str] = []
         i = 0
         while i < len(args):
             token = args[i]
@@ -207,7 +197,7 @@ class CommandExecutor:
 
     @staticmethod
     def _build_gamescope_command_for_inactive(
-        gamescope_args: ArgsList, has_ld_preload: bool
+        gamescope_args: list[str], has_ld_preload: bool
     ) -> str:
         """Build gamescope command for inactive state."""
         if has_ld_preload:
@@ -219,7 +209,7 @@ class CommandExecutor:
 
     @staticmethod
     def _build_active_gamescope_command(
-        args: ArgsList, pre_cmd: str, post_cmd: str
+        args: list[str], pre_cmd: str, post_cmd: str
     ) -> str:
         """Build command when gamescope is already active."""
         _, app_args = ArgumentProcessor.split_at_separator(args)
@@ -236,7 +226,7 @@ class CommandExecutor:
             return CommandExecutor.build_command([pre_cmd, final_app_cmd, post_cmd])
 
     @staticmethod
-    def _build_final_app_command(app_args: ArgsList, has_ld_preload: bool) -> str:
+    def _build_final_app_command(app_args: list[str], has_ld_preload: bool) -> str:
         """Build the final application command, restoring LD_PRELOAD if needed.
 
         User exports are no longer spliced in here - they're passed as real
@@ -252,14 +242,14 @@ class CommandExecutor:
                 or os.environ.get("LD_PRELOAD")
                 or ""
             )
-            parts: ArgsList = ["env", f"LD_PRELOAD={val}"] if val else []
+            parts: list[str] = ["env", f"LD_PRELOAD={val}"] if val else []
         else:
             parts = []
         parts.extend(app_args)
         return CommandExecutor._build_app_command(parts)
 
     @staticmethod
-    def _build_app_command(args: ArgsList) -> str:
+    def _build_app_command(args: list[str]) -> str:
         """Build application command from arguments."""
         if not args:
             return ""
@@ -293,7 +283,7 @@ class CommandExecutor:
         return False  # unrecognized form - fail closed, don't guess
 
     @staticmethod
-    def execute_bare(args: ArgsList, exports: EnvExports | None = None) -> ExitCode:
+    def execute_bare(args: list[str], exports: dict[str, str] | None = None) -> int:
         """Run the app command directly, bypassing gamescope.
 
         Applies NSCB_PRE_CMD / NSCB_POST_CMD consistently with the gamescope

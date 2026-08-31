@@ -313,7 +313,8 @@ class TestProfileManagerIntegration:
         mock_config.get.return_value = "-f -W 1920 -H 1080"
 
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
 
         # Use real ProfileManager to parse and merge args
@@ -346,11 +347,10 @@ class TestProfileManagerIntegration:
 
         # Mock config and executable detection
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
-        mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mock_run = mocker.patch(
             "nscb.command_executor.CommandExecutor.run_nonblocking", return_value=0
         )
@@ -375,14 +375,13 @@ ultrawide=-f -W 3440 -H 1440
 
         config_path = temp_config_with_content(config_data)
 
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
-        )
-        mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mocker.patch(
@@ -421,14 +420,13 @@ ultrawide=-f -W 3440 -H 1440
 
         config_path = temp_config_with_content(config_data)
 
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
-        )
-        mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mock_run = mocker.patch(
@@ -458,14 +456,13 @@ ultrawide=-f -W 3440 -H 1440
 
         config_path = temp_config_with_content(config_data)
 
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
-        )
-        mocker.patch(
-            "nscb.system_detector.EnvironmentHelper.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mock_run = mocker.patch(

@@ -118,13 +118,12 @@ class TestGamescopeArgsMapIntegration:
 
         # Mock required components
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
-        mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mock_run = mocker.patch(
@@ -206,13 +205,12 @@ ultrawide=-f -W 3440 -H 1440
 
         # Mock components
         mocker.patch(
-            "nscb.config_manager.PathHelper.get_config_path", return_value=config_path
+            "nscb.config_manager.ConfigManager.find_config_file",
+            return_value=config_path,
         )
+        mocker.patch("nscb.application.shutil.which", return_value=True)
         mocker.patch(
-            "nscb.system_detector.PathHelper.executable_exists", return_value=True
-        )
-        mocker.patch(
-            "nscb.system_detector.SystemDetector.is_gamescope_active",
+            "nscb.environment_helper.EnvironmentHelper.is_gamescope_active",
             return_value=False,
         )
         mock_run = mocker.patch(

@@ -1,12 +1,11 @@
 """Configuration management functionality for NeoscopeBuddy."""
 
+import os
 import re
 from pathlib import Path
 
 from .config_result import ConfigResult, ProfileEntry
 from .exceptions import InvalidConfigError
-from .path_helper import PathHelper
-from .types import EnvExports
 
 
 class ConfigManager:
@@ -15,7 +14,20 @@ class ConfigManager:
     @staticmethod
     def find_config_file() -> Path | None:
         """Find nscb.conf config file path."""
-        return PathHelper.get_config_path()
+        # Check XDG_CONFIG_HOME first (standard location)
+        if xdg_config_home := os.getenv("XDG_CONFIG_HOME"):
+            config_path = Path(xdg_config_home) / "nscb.conf"
+            if config_path.exists():
+                return config_path
+
+        # Fall back to HOME/.config/nscb.conf
+        home = os.getenv("HOME")
+        if home:
+            config_path = Path(home) / ".config" / "nscb.conf"
+            if config_path.exists():
+                return config_path
+
+        return None
 
     @staticmethod
     def load_config(config_file: Path) -> ConfigResult:
@@ -39,7 +51,7 @@ class ConfigManager:
             - Strips quotes from values safely
         """
         profiles: dict[str, ProfileEntry] = {}
-        exports: EnvExports = {}
+        exports: dict[str, str] = {}
         current: str | None = None
 
         file_size = config_file.stat().st_size
@@ -108,7 +120,7 @@ class ConfigManager:
 
     @staticmethod
     def _process_export_line(
-        line: str, line_num: int, config_file: str, exports: EnvExports
+        line: str, line_num: int, config_file: str, exports: dict[str, str]
     ) -> None:
         """
         Process an export configuration line.
