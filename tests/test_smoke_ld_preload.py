@@ -85,6 +85,56 @@ def test_smoke_with_preload(monkeypatch):
     )
 
 
+def test_smoke_active_gamescope_restores_preload(monkeypatch):
+    """Active-path (nested nscb inside gamescope) must restore LD_PRELOAD too.
+
+    Root cause: the shim always strips LD_PRELOAD before python starts, and NSCB
+    launches gamescope itself with env -u LD_PRELOAD, so an active session never
+    inherits it. The old noop path passed app args verbatim -> game ran with no
+    LD_PRELOAD (only NSCB_ORIG_LD_PRELOAD present, matching the /proc environ).
+    """
+    saved = (
+        "/run/host/usr/lib/extest/libextest.so:"
+        "/var/home/josh/.local/share/Steam/steamrt64/gameoverlayrenderer.so:"
+        "/var/home/josh/.local/share/Steam/steamrt32/gameoverlayrenderer.so:"
+        "/home/josh/.local/lib/liblinuwux.so"
+    )
+    monkeypatch.setenv("NSCB_ORIG_LD_PRELOAD", saved)
+    monkeypatch.delenv("LD_PRELOAD", raising=False)
+    monkeypatch.delenv("NSCB_DISABLE_LD_PRELOAD_WRAP", raising=False)
+    monkeypatch.delenv("FAUGUS_LOG", raising=False)
+
+    from nscb.command_executor import CommandExecutor
+
+    with patch(
+        "nscb.command_executor.DisplayDetector.get_resolution", return_value=None
+    ):
+        cmd = CommandExecutor._build_active_gamescope_command(
+            ["-f", "--", "forza"], "", ""
+        )
+    assert f"env LD_PRELOAD={saved} forza" in cmd, (
+        f"active path must re-inject LD_PRELOAD, got {cmd!r}"
+    )
+
+
+def test_smoke_active_gamescope_no_preload_verbatim(monkeypatch):
+    """No preload anywhere -> active path is a pure no-op."""
+    monkeypatch.delenv("NSCB_ORIG_LD_PRELOAD", raising=False)
+    monkeypatch.delenv("LD_PRELOAD", raising=False)
+    monkeypatch.delenv("NSCB_DISABLE_LD_PRELOAD_WRAP", raising=False)
+    monkeypatch.delenv("FAUGUS_LOG", raising=False)
+
+    from nscb.command_executor import CommandExecutor
+
+    with patch(
+        "nscb.command_executor.DisplayDetector.get_resolution", return_value=None
+    ):
+        cmd = CommandExecutor._build_active_gamescope_command(
+            ["-f", "--", "forza"], "", ""
+        )
+    assert cmd == "forza", f"expected verbatim app, got {cmd!r}"
+
+
 def test_smoke_debug_captures_saved(monkeypatch, tmp_path):
     """NSCB_DEBUG=1 must capture saved LD_PRELOAD to XDG_RUNTIME_DIR/nscb.log and stderr."""
     monkeypatch.setenv("NSCB_DEBUG", "1")

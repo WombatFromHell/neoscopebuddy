@@ -215,10 +215,15 @@ class CommandExecutor:
         _, app_args = ArgumentProcessor.split_at_separator(args)
         debug_log(f"_build_active_gamescope_command: app_args={app_args}")
 
-        # ponytail: noop path runs inside an existing gamescope, so the
-        # session already inherits LD_PRELOAD — re-injecting would alter the
-        # launch env. Pass app args verbatim.
-        final_app_cmd = CommandExecutor._build_app_command(app_args)
+        # ponytail: must restore LD_PRELOAD here too. The shim always strips it
+        # (into NSCB_ORIG_LD_PRELOAD) before python starts, and NSCB's own
+        # gamescope launch strips it from gamescope too (env -u LD_PRELOAD),
+        # so an active session never inherits it — re-inject from the saved
+        # value. No preload at all -> _build_final_app_command is a no-op.
+        has_ld_preload = CommandExecutor._check_ld_preload_status()
+        final_app_cmd = CommandExecutor._build_final_app_command(
+            app_args, has_ld_preload
+        )
 
         if not pre_cmd and not post_cmd:
             return final_app_cmd
