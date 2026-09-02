@@ -3,167 +3,109 @@
 
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-26.05-chilled/0.1";
-    pyproject-nix = {
-      url = "github:pyproject-nix/pyproject.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    uv2nix = {
-      url = "github:pyproject-nix/uv2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    pyproject-build-systems = {
-      url = "github:pyproject-nix/build-system-pkgs";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs = {
     self,
     nixpkgs,
-    pyproject-nix,
-    uv2nix,
-    pyproject-build-systems,
   }: let
-    # Read version from pyproject.toml as source of truth
     version = let
-      content = builtins.readFile ./pyproject.toml;
-      lines = builtins.split "\n" content;
-      filtered = builtins.filter (line: builtins.isString line && (builtins.substring 0 9 line) == "version =") lines;
-      match = builtins.match ".*version = \"([^\"]+)\".*" (builtins.head filtered);
+      m = builtins.match ".*\nversion = \"([^\"]+)\".*" ("\n" + builtins.readFile ./pyproject.toml);
     in
-      if match != null
-      then builtins.head match
+      if m != null
+      then builtins.head m
       else throw "Version not found in pyproject.toml";
 
-    forAllSystems = nixpkgs.lib.genAttrs ["x86_64-linux" "aarch64-linux"];
+    epoch = 1;
 
-    # Read Python version from .python-version
     pyVerRaw = builtins.replaceStrings ["\n"] [""] (builtins.readFile ./.python-version);
     pyVerAttr = "python" + builtins.replaceStrings ["."] [""] pyVerRaw;
 
-    mkPkgs = system: import nixpkgs {inherit system;};
-    python = pkgs: pkgs.${pyVerAttr};
+    forAllSystems = nixpkgs.lib.genAttrs ["x86_64-linux" "aarch64-linux"];
 
-    # Load workspace from uv.lock and create overlay for reproducible Python packages
-    workspace = uv2nix.lib.workspace.loadWorkspace {
-      workspaceRoot = ./.;
-    };
-    projectOverlay = workspace.mkPyprojectOverlay {
-      sourcePreference = "wheel";
-    };
+    mkOutputs = system: let
+      pkgs = import nixpkgs {inherit system;};
+      py = pkgs.${pyVerAttr};
 
-    mkPythonSet = system: let
-      pkgs' = mkPkgs system;
-    in
-      (pkgs'.callPackage pyproject-nix.build.packages {
-        python = python pkgs';
-      }).overrideScope (nixpkgs.lib.composeManyExtensions [
-        pyproject-build-systems.overlays.wheel
-        projectOverlay
-      ]);
-
-    mkZipapp = system: let
-      pkgs = mkPkgs system;
-      py = python pkgs;
-
-      # Step A: Prepare source with version injection
-      src = pkgs.stdenvNoCC.mkDerivation {
-        name = "neoscopebuddy-src";
-        buildInputs = [pkgs.gnused];
-        phases = ["installPhase"];
-        installPhase = ''
-          mkdir -p $out
-          cp -r ${./src} staging
-          chmod -R u+w staging
-          rm -f staging/polyglot.sh
-          sed -i 's/^__version__ = .*/__version__ = "${version}"/' \
-            "staging/nscb/application.py"
-          cp -r staging/* $out/
-        '';
-      };
-    in
-      pkgs.stdenvNoCC.mkDerivation {
+      zipapp = pkgs.stdenvNoCC.mkDerivation {
         name = "nscb.pyz";
-
-        nativeBuildInputs = with pkgs; [
-          coreutils
-          findutils
-          gnused
-          zip
-          python3
-          uv
-        ];
-
+        nativeBuildInputs = [pkgs.coreutils pkgs.findutils pkgs.gnused pkgs.zip];
+        dontUnpack = true;
+        dontInstall = true;
+        dontPatchShebangs = true;
         buildPhase = ''
           mkdir -p staging
-          cp -r ${src}/* staging
+          cp -r ${./src}/. staging
           rm -f staging/polyglot.sh
+          chmod -R u+w staging
 
-          # Create __main__.py entry point
+          sed -i 's/^__version__ = .*/__version__ = "${version}"/' \
+            "staging/nscb/application.py"
           echo "from entry import main; main()" > staging/__main__.py
 
-          # Normalize permissions and timestamps for determinism
-          chmod -R u+w staging
-          find staging -exec touch -d "@1" {} +
+          find staging -type d -exec chmod 755 {} +
+          find staging -type f -exec chmod 644 {} +
+          find staging -exec touch -d "@${toString epoch}" {} +
 
-          # Build deterministic zip: sorted file list, no extra attributes (-X)
           (cd staging && find . \( -type d -o -type f \) | LC_ALL=C sort | zip -X -q -@ archive.zip)
 
-          # Prepend polyglot shim (valid sh + valid python) — must match Makefile.
           cat ${./src/polyglot.sh} > $out
           cat staging/archive.zip >> $out
           chmod +x $out
         '';
-
-        dontUnpack = true;
-        dontInstall = true;
-        dontPatchShebangs = true;
       };
-  in {
-    packages = forAllSystems (system: {
-      default = mkZipapp system;
-    });
 
-    devShells = forAllSystems (system: let
-      pkgs = mkPkgs system;
-      pythonSet = mkPythonSet system;
-      venv = pythonSet.mkVirtualEnv "neoscopebuddy-dev" [];
-    in
-      pkgs.mkShell {
+      nscb =
+        pkgs.runCommand "nscb" {
+          nativeBuildInputs = [pkgs.gnused];
+          passthru = {inherit zipapp;};
+        } ''
+          mkdir -p $out/bin
+          sed 's|/usr/bin/python3|${py}/bin/python3|' ${zipapp} > $out/bin/nscb
+          chmod +x $out/bin/nscb
+        '';
+    in {
+      packages = {
+        default = zipapp;
+        inherit nscb;
+      };
+      devShell = pkgs.mkShell {
         name = "neoscopebuddy";
-
-        packages = with pkgs;
-          [
-            bashInteractive
-            coreutils
-            findutils
-            ripgrep
-            jq
-            less
-            prettier
-            rsync
-            util-linux
-            uv
-            which
-            zip
-          ]
-          ++ [
-            # Drop-in replacement for `uv run` — deterministic venv from uv2nix
-            venv
-          ];
-
+        packages = with pkgs; [
+          bashInteractive
+          coreutils
+          findutils
+          ripgrep
+          jq
+          less
+          prettier
+          rsync
+          util-linux
+          uv
+          which
+          zip
+          py
+        ];
         shellHook = ''
-          export PYTHONPATH="${venv}":$PYTHONPATH
-
           echo "NeoscopeBuddy development environment loaded"
-          echo "Python: $(${python pkgs}/bin/python3 --version)"
+          echo "Python: $(${py}/bin/python3 --version)"
           echo ""
           echo "Build with: make build  (local)"
           echo "Nix build: nix build    (reproducible)"
         '';
+      };
+    };
 
-        VIRTUAL_ENV = "${venv}";
-        PATH = "${venv}/bin:$PATH";
-      });
+    perSystem = forAllSystems mkOutputs;
+  in {
+    packages = forAllSystems (system: perSystem.${system}.packages);
+    devShells = forAllSystems (system: {default = perSystem.${system}.devShell;});
+
+    nixosModules.default = {pkgs, ...}: {
+      environment.systemPackages = [self.packages.${pkgs.system}.nscb];
+    };
+    homeModules.default = {pkgs, ...}: {
+      home.packages = [self.packages.${pkgs.system}.nscb];
+    };
   };
 }

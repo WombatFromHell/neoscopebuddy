@@ -6,15 +6,12 @@ ENTRY_FUNC = main
 ARTIFACT = nscb.pyz
 OUT = $(BUILD_DIR)/$(ARTIFACT)
 CHECKSUM = $(BUILD_DIR)/$(ARTIFACT).sha256sum
-
 # Fixed epoch for reproducible builds:
 # Use epoch 1 (Jan 1, 1970) for maximum determinism.
 # := (not ?=) so the environment cannot override it.
 SOURCE_DATE_EPOCH := 1
-
 # Extract version from pyproject.toml
 VERSION := $(shell grep '^version = ' pyproject.toml | cut -d'"' -f2)
-
 # Human-readable timestamp for logging
 TIMESTAMP := $(shell date -d "@$(SOURCE_DATE_EPOCH)" -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -25,37 +22,41 @@ clean:
 	.pytest_cache \
 	.ruff_cache \
 	.direnv \
+	.venv \
 	.pi \
 	result* \
 	.coverage
 
-configure:
+configure: clean
 	uv venv --clear
 	uv sync --frozen
 
-build: clean
+build: configure
 	@echo "Building $(ARTIFACT) (version $(VERSION))"
 	@echo "SOURCE_DATE_EPOCH: $(SOURCE_DATE_EPOCH) ($(TIMESTAMP))"
 	mkdir -p $(BUILD_DIR)
-
 	# Create staging directory for deterministic build
 	# Copy contents of src/ directly into staging (not src/ itself)
+	# Use src/. (not src/*) so dotfiles are included, matching the Nix build
 	rm -rf $(BUILD_DIR)/staging
 	mkdir -p $(BUILD_DIR)/staging
-	cp -r $(SRC_DIR)/* $(BUILD_DIR)/staging/
+	cp -r $(SRC_DIR)/. $(BUILD_DIR)/staging/
 	# Shim is prepended, not bundled inside the zip
 	rm -f $(BUILD_DIR)/staging/polyglot.sh
-
 	# Inject version into staging copy of application.py (not source)
 	sed -i 's/^__version__ = .*/__version__ = "$(VERSION)"/' $(BUILD_DIR)/staging/nscb/application.py
-
 	# Create __main__.py for zipapp entry point (overwrite if exists)
 	echo "from entry import main; main()" > $(BUILD_DIR)/staging/__main__.py
-
+	# Normalize permission bits on ALL files in staging directory.
+	# zip stores mode bits in its headers, so uncommitted local chmod's,
+	# umask differences, etc. must not leak into the archive. This must
+	# match whatever convention the Nix build produces (plain files 644,
+	# directories 755, nothing individually executable inside the zip).
+	find $(BUILD_DIR)/staging -type d -exec chmod 755 {} \;
+	find $(BUILD_DIR)/staging -type f -exec chmod 644 {} \;
 	# Normalize timestamps on ALL files in staging directory
 	# This is crucial for bitwise determinism
 	find $(BUILD_DIR)/staging -exec touch -d "@$(SOURCE_DATE_EPOCH)" {} \;
-
 	# Create the zip archive deterministically
 	# -X: strip extra file attributes
 	# -q: quiet mode
@@ -64,18 +65,14 @@ build: clean
 	cd $(BUILD_DIR)/staging && \
 		find . \( -type d -o -type f \) | LC_ALL=C sort | \
 		zip -X -q -@ ../archive.zip
-
 	# Prepend polyglot shim to create executable pyz (shim is valid sh + valid python)
 	cat $(SRC_DIR)/polyglot.sh > $(OUT)
 	cat $(BUILD_DIR)/archive.zip >> $(OUT)
 	chmod +x $(OUT)
-
 	# Generate SHA256 checksum file for verification (basename only for portability)
 	cd $(BUILD_DIR) && sha256sum $(ARTIFACT) > $(ARTIFACT).sha256sum
-
 	# Cleanup staging and intermediate files
 	rm -rf $(BUILD_DIR)/staging $(BUILD_DIR)/archive.zip
-
 	@echo "Built: $(OUT)"
 	@echo "SHA256: $$(cat $(OUT).sha256sum | cut -d' ' -f1)"
 
@@ -91,7 +88,7 @@ install: $(OUT)
 	install -m 0644 $(OUT).sha256sum "$$INSTALL_DIR"; \
 	ln -sfn "$$INSTALL_DIR/$(ARTIFACT)" "$$HOME/.local/bin/nscb"; \
 	echo "Installed to $$INSTALL_DIR/$(ARTIFACT)"
-
+	
 test:
 	uv run pytest --tb=short --cov=src --cov-report=term-missing --cov-branch
 
@@ -114,7 +111,7 @@ quality: lint format
 
 ci: configure test lint build
 
-build-nix: clean
+build-nix: configure
 	@echo "Building $(ARTIFACT) via Nix (version $(VERSION))"
 	mkdir -p $(BUILD_DIR)
 	nix build . --out-link ./$(OUT)
