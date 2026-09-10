@@ -6,6 +6,8 @@ import os
 import shlex
 import shutil
 import sys
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import Optional
 
 from .command_executor import CommandExecutor
@@ -14,14 +16,24 @@ from .environment_helper import EnvironmentHelper, debug_log
 from .exceptions import ConfigNotFoundError, NscbError, ProfileNotFoundError
 from .profile_manager import ProfileManager
 
-__version__ = "{{VERSION}}"  # Replaced at build time
+__version__ = "DEV"
+
+
+def _get_version() -> str:
+    """Get version from embedded value or package metadata fallback."""
+    if __version__ != "DEV":
+        return __version__
+    try:
+        return _pkg_version("neoscopebuddy")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def print_help() -> None:
     """Print concise help message about nscb functionality."""
     print(
         f"""\
-neoscopebuddy v{__version__} – gamescope wrapper
+neoscopebuddy v{_get_version()} – gamescope wrapper
 USAGE
   nscb.pyz [--help]
   nscb.pyz [-p profile[,...]] [--profile=profile[,...]]

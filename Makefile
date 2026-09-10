@@ -20,9 +20,9 @@ REPORT_BUILT = echo "Built: $(OUT)"; echo "SHA256: $$(cat $(OUT).sha256sum | cut
 
 CONTAINER_IMAGE = neoscopebuddy-nix
 CONTAINER_FILE = Containerfile.dev
-# Single named volume shared by all three projects (protonge-fetcher,
-# neoscopebuddy, beryl-gamemode) so the Nix store isn't duplicated per
-# project. NOTE: clean-container removes it for all three.
+# Single named volume shared by all four workspace projects (protonge-fetcher,
+# neoscopebuddy, beryl-gamemode, ublue-rebase-helper) so the Nix store isn't
+# duplicated per project. NOTE: clean-container removes it for all four.
 NIX_STORE_VOLUME = nix-store
 UV_CACHE_VOLUME = neoscopebuddy-uv-cache
 
