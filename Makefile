@@ -7,13 +7,80 @@ ARTIFACT = nscb.pyz
 OUT = $(BUILD_DIR)/$(ARTIFACT)
 CHECKSUM = $(BUILD_DIR)/$(ARTIFACT).sha256sum
 # Fixed epoch for reproducible builds:
-# Use epoch 1 (Jan 1, 1970) for maximum determinism.
+# Zip clamps dates before 1980-01-01 to that floor — pin the epoch there
+# so GNU (Linux) and BSD (macOS) zip produce bitwise-identical archives.
 # := (not ?=) so the environment cannot override it.
-SOURCE_DATE_EPOCH := 1
+SOURCE_DATE_EPOCH := 315532800
 # Extract version from pyproject.toml
 VERSION := $(shell grep '^version = ' pyproject.toml | cut -d'"' -f2)
 # Human-readable timestamp for logging
 TIMESTAMP := $(shell date -d "@$(SOURCE_DATE_EPOCH)" -u +%Y-%m-%dT%H:%M:%SZ)
+
+REPORT_BUILT = echo "Built: $(OUT)"; echo "SHA256: $$(cat $(OUT).sha256sum | cut -d' ' -f1)"
+
+CONTAINER_IMAGE = neoscopebuddy-nix
+CONTAINER_FILE = Containerfile.dev
+# Single named volume shared by all three projects (protonge-fetcher,
+# neoscopebuddy, beryl-gamemode) so the Nix store isn't duplicated per
+# project. NOTE: clean-container removes it for all three.
+NIX_STORE_VOLUME = nix-store
+UV_CACHE_VOLUME = neoscopebuddy-uv-cache
+
+ifeq ($(origin CONTAINER_RUNTIME),undefined)
+CONTAINER_RUNTIME := $(shell command -v nerdctl 2>/dev/null || command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+endif
+
+HOST_UID := $(shell id -u)
+HOST_GID := $(shell id -g)
+RECLAIM_OWNERSHIP = chown -R $(HOST_UID):$(HOST_GID) $(CURDIR) 2>/dev/null || true
+
+CONTAINER_FLAGS = --security-opt label=disable --userns=keep-id:uid=0,gid=0
+# Mounts:
+# 1. Host project at /work
+# 2. Persistent Nix store root at /nix (store + database + profiles)
+# 3. Persistent uv cache at /root/.cache/uv
+CONTAINER_MOUNTS = \
+	-v "$(CURDIR)":/work \
+	-v "$(NIX_STORE_VOLUME)":/nix \
+	-v "$(UV_CACHE_VOLUME)":/root/.cache/uv \
+	-e HOME=/root \
+	-e DIRENV_DIR="" \
+	-e UV_CACHE_DIR=/root/.cache/uv \
+	-e UV_LINK_MODE=copy \
+	-w /work
+
+CONTAINER_RUN = $(CONTAINER_RUNTIME) run --rm $(CONTAINER_FLAGS) $(CONTAINER_MOUNTS) $(CONTAINER_IMAGE)
+CONTAINER_RUN_IT = $(CONTAINER_RUNTIME) run --rm -it $(CONTAINER_FLAGS) $(CONTAINER_MOUNTS) $(CONTAINER_IMAGE)
+
+define run_in_container
+$(CONTAINER_RUN) /bin/sh -c ' \
+	git config --global --add safe.directory /work 2>/dev/null || true; \
+	mkdir -p /nix/var/nix/daemon-socket; \
+	nix-daemon & \
+	sleep 2; \
+	NIX_REMOTE=daemon nix develop -c bash -ec "$(1)"; \
+	STATUS=$$?; \
+	exit $$STATUS \
+'; \
+STATUS=$$?; \
+$(RECLAIM_OWNERSHIP); \
+exit $$STATUS
+endef
+
+define run_in_container_it
+$(CONTAINER_RUN_IT) /bin/sh -c ' \
+	git config --global --add safe.directory /work 2>/dev/null || true; \
+	mkdir -p /nix/var/nix/daemon-socket; \
+	nix-daemon & \
+	sleep 2; \
+	NIX_REMOTE=daemon nix develop -c bash -ec "$(1)"; \
+	STATUS=$$?; \
+	exit $$STATUS \
+'; \
+STATUS=$$?; \
+$(RECLAIM_OWNERSHIP); \
+exit $$STATUS
+endef
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +; \
@@ -123,5 +190,30 @@ ci-nix: lint test build-nix
 
 all: build install
 
-.PHONY: build build-nix install test lint prettier format radon quality clean all configure ci ci-nix
-.SILENT: build build-nix install test lint prettier format radon quality clean all configure ci ci-nix
+container:
+	$(CONTAINER_RUNTIME) build -t $(CONTAINER_IMAGE) -f $(CONTAINER_FILE) .
+
+clean-container:
+	@echo "Cleaning container image and persistent volumes..."
+	-$(CONTAINER_RUNTIME) rmi -f $(CONTAINER_IMAGE) >/dev/null 2>&1 || true
+	-$(CONTAINER_RUNTIME) volume rm -f $(NIX_STORE_VOLUME) >/dev/null 2>&1 || true
+	-$(CONTAINER_RUNTIME) volume rm -f $(UV_CACHE_VOLUME) >/dev/null 2>&1 || true
+	@echo "Cleanup complete."
+
+enter-container: container
+	$(call run_in_container_it,nix develop)
+
+build-container: container
+	@echo "Building $(ARTIFACT) via Nix in container (version $(VERSION))"
+	$(call run_in_container,make build-nix)
+	$(REPORT_BUILT)
+
+container-ci: container
+	@echo "Running pre-publish checks via Nix in container (version $(VERSION))"
+	$(call run_in_container,make ci-nix)
+
+container-%: container
+	$(call run_in_container,make $*)
+
+.PHONY: build build-nix install test lint prettier format radon quality clean all configure ci ci-nix container clean-container enter-container build-container container-ci container-%
+.SILENT: build build-nix install test lint prettier format radon quality clean all configure ci ci-nix container clean-container enter-container build-container container-ci container-%
