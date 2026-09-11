@@ -1,9 +1,9 @@
 [project]
 name = "neoscopebuddy"
-version = "1.2.8"
+version = "1.2.9"
 description = "A scopebuddy-like gamescope wrapper utility written in Python"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13.5"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
